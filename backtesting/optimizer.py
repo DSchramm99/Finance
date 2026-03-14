@@ -1,5 +1,6 @@
 import itertools
 from .engine import run_backtest
+import numpy as np
 
 
 def train_test_split(data, train_end_date):
@@ -9,18 +10,10 @@ def train_test_split(data, train_end_date):
 
 
 def score_function(metrics):
-    """
-    Simple robust scoring:
-    maximize return, penalize drawdown.
-    """
-
     total_return = metrics["total_return"]
     max_drawdown = metrics["max_drawdown"]
 
-    # Drawdown is negative → use absolute value
-    score = total_return - abs(max_drawdown)
-
-    return score
+    return total_return - abs(max_drawdown)
 
 
 def optimize_parameters(
@@ -29,7 +22,7 @@ def optimize_parameters(
     stop_percent_values
 ):
 
-    best_score = -999
+    best_score = -np.inf
     best_params = None
     best_metrics = None
 
@@ -52,13 +45,13 @@ def optimize_parameters(
             best_metrics = metrics
 
     if best_params is None:
-        return []
+        return None
 
-    return [{
+    return {
         **best_params,
         **best_metrics,
         "score": best_score
-    }]
+    }
 
 
 def evaluate_on_test(test_data, k, fixed_stop_pct):

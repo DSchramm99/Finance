@@ -8,6 +8,12 @@ def run_backtest(
     fixed_stop_pct=0.05,
     return_equity=False
 ):
+    """
+    Backtest with:
+    - SMA20 trend filter
+    - ATR-based stop
+    - Fixed percentage stop
+    """
 
     df = df.copy()
 
@@ -15,16 +21,16 @@ def run_backtest(
     # Indicators
     # =========================
 
-    df["SMA20"] = df["Close"].rolling(20).mean()
-    df["ATR"] = (df["High"] - df["Low"]).rolling(14).mean()
+    df["SMA20"] = df["Close"].rolling(window=20).mean()
+    df["ATR"] = (df["High"] - df["Low"]).rolling(window=14).mean()
 
     # =========================
     # Trading State
     # =========================
 
     position = 0
-    entry_price = 0
-    highest_price = 0
+    entry_price = 0.0
+    highest_price = 0.0
 
     equity = 1.0
     equity_curve = []
@@ -37,29 +43,34 @@ def run_backtest(
 
     for i in range(len(df)):
 
+        # --- Extract scalar values safely ---
         price = df["Close"].iloc[i]
         sma20 = df["SMA20"].iloc[i]
         atr = df["ATR"].iloc[i]
 
+        # Skip if indicators not ready
         if pd.isna(sma20) or pd.isna(atr):
             equity_curve.append(equity)
             continue
 
-        # -----------------
+        price = float(price)
+        sma20 = float(sma20)
+        atr = float(atr)
+
+        # =====================
         # ENTRY
-        # -----------------
+        # =====================
 
         if position == 0:
 
             if price > sma20:
-
                 position = 1
                 entry_price = price
                 highest_price = price
 
-        # -----------------
-        # MANAGE POSITION
-        # -----------------
+        # =====================
+        # POSITION MANAGEMENT
+        # =====================
 
         else:
 
@@ -73,7 +84,6 @@ def run_backtest(
             if price < stop_level:
 
                 trade_return = (price / entry_price) - 1
-
                 equity *= (1 + trade_return)
 
                 trades.append(trade_return)
@@ -92,13 +102,11 @@ def run_backtest(
 
     running_max = equity_series.cummax()
     drawdown = (equity_series - running_max) / running_max
-
     max_drawdown = drawdown.min()
 
     profit_factor = None
 
     if len(trades) > 0:
-
         gains = [t for t in trades if t > 0]
         losses = [t for t in trades if t < 0]
 

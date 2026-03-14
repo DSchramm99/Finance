@@ -7,7 +7,6 @@ from .optimizer import (
     run_backtest
 )
 
-
 # ==============================
 # Global Optimization
 # ==============================
@@ -53,10 +52,7 @@ def optimize_global_parameters(
             if len(portfolio_returns) == 0:
                 continue
 
-            # Simple global score
             avg_return = np.mean(portfolio_returns)
-
-            # Drawdown penalty optional (wenn vorhanden)
             score = avg_return
 
             if score > best_score:
@@ -70,7 +66,7 @@ def optimize_global_parameters(
 
 
 # ==============================
-# Final Evaluation (Test Set)
+# Final Evaluation
 # ==============================
 
 def run_global_backtest(
@@ -86,7 +82,7 @@ def run_global_backtest(
 
     for ticker in tickers:
 
-        data = yf.download(ticker, start=start_date)
+        data = yf.download(ticker, start=start_date, auto_adjust=True)
         data = data.dropna()
 
         train, test = train_test_split(data, train_end_date)
@@ -115,8 +111,11 @@ def run_global_backtest(
         })
 
         if portfolio_equity is None:
-            portfolio_equity = equity_curve
+            portfolio_equity = equity_curve.copy()
         else:
-            portfolio_equity["Portfolio_Equity"] += equity_curve["Portfolio_Equity"]
+            portfolio_equity = portfolio_equity.add(
+                equity_curve,
+                fill_value=0
+            )
 
     return all_test_results, portfolio_equity

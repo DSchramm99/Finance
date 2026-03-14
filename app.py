@@ -1,29 +1,56 @@
 import streamlit as st
 import pandas as pd
 
+from universe.universe_loader import get_index_universe
+from recommendation.engine import generate_recommendations
+
 from backtesting.multi_asset import (
     optimize_global_parameters,
     run_global_backtest
 )
 
+# =====================================================
+# Page Setup
+# =====================================================
+
 st.set_page_config(layout="wide")
+st.title("📊 Trading System")
 
-st.title("📊 Trading Strategy Optimizer")
 
-# ==============================
-# Sidebar Settings
-# ==============================
+# =====================================================
+# Region -> Index Kopplung (keine ungültigen Kombinationen)
+# =====================================================
 
-st.sidebar.header("Settings")
-
-tickers = st.sidebar.multiselect(
-    "Select Tickers",
-    [
-        "AAPL", "MSFT", "NVDA", "JPM", "JNJ", "PG",
-        "SAP.DE", "SIE.DE", "BMW.DE"
-    ],
-    default=["AAPL", "MSFT", "NVDA"]
+region = st.sidebar.selectbox(
+    "Region",
+    ["USA", "Germany"]
 )
+
+if region == "USA":
+    index_choice = st.sidebar.selectbox(
+        "Index",
+        ["S&P 500", "Nasdaq 100", "Dow Jones"]
+    )
+
+elif region == "Germany":
+    index_choice = st.sidebar.selectbox(
+        "Index",
+        ["DAX", "TecDAX"]
+    )
+
+
+# =====================================================
+# Recommendation Button
+# =====================================================
+
+run_scan = st.sidebar.button("🔎 Run Recommendations")
+
+
+# =====================================================
+# Backtest Settings
+# =====================================================
+
+st.sidebar.header("Backtest (Optional)")
 
 start_date = st.sidebar.date_input(
     "Start Date",
@@ -35,28 +62,46 @@ train_end = st.sidebar.date_input(
     value=pd.to_datetime("2022-12-31")
 )
 
-run_button = st.sidebar.button("Run Optimization")
+run_backtest = st.sidebar.button("📈 Run Optimization")
 
-# ==============================
-# Parameter Search Space
-# ==============================
 
-k_values = [1.0, 1.25, 1.5, 1.75, 2.0]
+# =====================================================
+# Recommendation Engine
+# =====================================================
 
-stop_pct_values = [
-    0.03,
-    0.05,
-    0.07,
-    0.10
-]
+if run_scan:
 
-# ==============================
-# Run Optimization
-# ==============================
+    tickers = get_index_universe(index_choice)
 
-if run_button:
+    st.write(f"{len(tickers)} tickers loaded")
 
-    st.subheader("🔎 Optimizing Global Parameters")
+    if not tickers:
+        st.error("No tickers available.")
+        st.stop()
+
+    results = generate_recommendations(
+        tickers,
+        k=1.5,
+        drawdown_limit=0.2
+    )
+
+    if results.empty:
+        st.warning("No signals found.")
+    else:
+        st.subheader("🏆 Top 5 Recommendations")
+        st.dataframe(results.head(5))
+
+
+# =====================================================
+# Backtest Section
+# =====================================================
+
+if run_backtest:
+
+    tickers = get_index_universe(index_choice)
+
+    k_values = [1.0, 1.25, 1.5, 1.75, 2.0]
+    stop_pct_values = [0.03, 0.05, 0.07, 0.10]
 
     best_params = optimize_global_parameters(
         tickers,
@@ -66,18 +111,14 @@ if run_button:
         stop_pct_values
     )
 
-    st.success("Best Parameters Found")
+    if best_params is None:
+        st.error("No valid parameters found.")
+        st.stop()
 
     st.write(best_params)
 
     best_k = best_params["k"]
     best_stop = best_params["stop_pct"]
-
-    # ==============================
-    # Run Final Backtest
-    # ==============================
-
-    st.subheader("📈 Running Test Backtest")
 
     test_results, portfolio_equity = run_global_backtest(
         tickers,
@@ -87,58 +128,8 @@ if run_button:
         best_stop
     )
 
-    # ==============================
-    # Portfolio Equity
-    # ==============================
-
-    st.subheader("📊 Portfolio Equity Curve")
-
     if portfolio_equity is not None:
         st.line_chart(portfolio_equity["Portfolio_Equity"])
 
-    # ==============================
-    # Asset Results
-    # ==============================
-
-    st.subheader("📋 Asset Performance")
-
     if test_results:
-
-        df = pd.DataFrame(test_results)
-
-        st.dataframe(df)
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric(
-            "Average Return",
-            round(df["total_return"].mean(), 3)
-        )
-
-        col2.metric(
-            "Average Max Drawdown",
-            round(df["max_drawdown"].mean(), 3)
-        )
-
-        if "profit_factor" in df.columns:
-            col3.metric(
-                "Average Profit Factor",
-                round(df["profit_factor"].mean(), 3)
-            )
-
-    # ==============================
-    # Single Asset Analysis
-    # ==============================
-
-    if test_results:
-
-        st.subheader("🔍 Single Asset Detail")
-
-        selected_asset = st.selectbox(
-            "Choose Asset",
-            df["ticker"].tolist()
-        )
-
-        asset_row = df[df["ticker"] == selected_asset]
-
-        st.write(asset_row)
+        st.dataframe(pd.DataFrame(test_results))
