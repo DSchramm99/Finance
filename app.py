@@ -1,117 +1,144 @@
 import streamlit as st
-import yfinance as yf
-import plotly.graph_objects as go
 import pandas as pd
 
-# -------------------------
-# Page Configuration
-# -------------------------
-st.set_page_config(
-    page_title="Trading Recommendation Tool",
-    layout="wide"
+from backtesting.multi_asset import (
+    optimize_global_parameters,
+    run_global_backtest
 )
 
-# -------------------------
-# Sidebar
-# -------------------------
-st.sidebar.title("Settings")
+st.set_page_config(layout="wide")
 
-market = st.sidebar.selectbox(
-    "Market",
-    ["USA", "Germany"]
+st.title("📊 Trading Strategy Optimizer")
+
+# ==============================
+# Sidebar Settings
+# ==============================
+
+st.sidebar.header("Settings")
+
+tickers = st.sidebar.multiselect(
+    "Select Tickers",
+    [
+        "AAPL", "MSFT", "NVDA", "JPM", "JNJ", "PG",
+        "SAP.DE", "SIE.DE", "BMW.DE"
+    ],
+    default=["AAPL", "MSFT", "NVDA"]
 )
 
-index_options = {
-    "USA": ["S&P 500", "NASDAQ"],
-    "Germany": ["DAX", "TecDAX"]
-}
-
-index = st.sidebar.selectbox(
-    "Index",
-    index_options[market]
+start_date = st.sidebar.date_input(
+    "Start Date",
+    value=pd.to_datetime("2018-01-01")
 )
 
-# For now: manual ticker input (we can auto-map later)
-ticker = st.sidebar.text_input("Ticker Symbol", "AAPL")
-
-timeframe = st.sidebar.selectbox(
-    "Timeframe (Short/Mid Term)",
-    ["1D", "5D", "1W", "1M", "3M", "6M"]
+train_end = st.sidebar.date_input(
+    "Train End Date",
+    value=pd.to_datetime("2022-12-31")
 )
 
-analyze = st.sidebar.button("Run Analysis")
+run_button = st.sidebar.button("Run Optimization")
 
-# -------------------------
-# Timeframe Mapping
-# -------------------------
-timeframe_map = {
-    "1D": "1d",
-    "5D": "5d",
-    "1W": "1wk",
-    "1M": "1mo",
-    "3M": "3mo",
-    "6M": "6mo"
-}
+# ==============================
+# Parameter Search Space
+# ==============================
 
-# -------------------------
-# Main Layout
-# -------------------------
-st.title("📊 Short / Mid-Term Trading Dashboard")
+k_values = [1.0, 1.25, 1.5, 1.75, 2.0]
 
-if analyze:
+stop_pct_values = [
+    0.03,
+    0.05,
+    0.07,
+    0.10
+]
 
-    with st.spinner("Loading data..."):
+# ==============================
+# Run Optimization
+# ==============================
 
-        data = yf.download(
-            ticker,
-            period=timeframe_map[timeframe],
-            interval="1d"
-        )
+if run_button:
 
-    if data.empty:
-        st.error("No data found for this ticker.")
-    else:
-        # -------------------------
-        # Plotly Chart
-        # -------------------------
-        fig = go.Figure()
+    st.subheader("🔎 Optimizing Global Parameters")
 
-        fig.add_trace(
-            go.Candlestick(
-                x=data.index,
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name="Price"
-            )
-        )
+    best_params = optimize_global_parameters(
+        tickers,
+        str(start_date),
+        str(train_end),
+        k_values,
+        stop_pct_values
+    )
 
-        fig.update_layout(
-            height=600,
-            xaxis_title="Date",
-            yaxis_title="Price",
-            xaxis_rangeslider_visible=False
-        )
+    st.success("Best Parameters Found")
 
-        st.plotly_chart(fig, use_container_width=True)
+    st.write(best_params)
 
-        # -------------------------
-        # Placeholder Sections
-        # -------------------------
+    best_k = best_params["k"]
+    best_stop = best_params["stop_pct"]
+
+    # ==============================
+    # Run Final Backtest
+    # ==============================
+
+    st.subheader("📈 Running Test Backtest")
+
+    test_results, portfolio_equity = run_global_backtest(
+        tickers,
+        str(start_date),
+        str(train_end),
+        best_k,
+        best_stop
+    )
+
+    # ==============================
+    # Portfolio Equity
+    # ==============================
+
+    st.subheader("📊 Portfolio Equity Curve")
+
+    if portfolio_equity is not None:
+        st.line_chart(portfolio_equity["Portfolio_Equity"])
+
+    # ==============================
+    # Asset Results
+    # ==============================
+
+    st.subheader("📋 Asset Performance")
+
+    if test_results:
+
+        df = pd.DataFrame(test_results)
+
+        st.dataframe(df)
+
         col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.subheader("Trend Status")
-            st.info("Coming soon")
+        col1.metric(
+            "Average Return",
+            round(df["total_return"].mean(), 3)
+        )
 
-        with col2:
-            st.subheader("Risk Score")
-            st.info("Coming soon")
+        col2.metric(
+            "Average Max Drawdown",
+            round(df["max_drawdown"].mean(), 3)
+        )
 
-        with col3:
-            st.subheader("Recommendation")
-            st.info("Coming soon")
+        if "profit_factor" in df.columns:
+            col3.metric(
+                "Average Profit Factor",
+                round(df["profit_factor"].mean(), 3)
+            )
 
-        st.subheader("Explanation")
-        st.write("Analysis logic will appear here.")
+    # ==============================
+    # Single Asset Analysis
+    # ==============================
+
+    if test_results:
+
+        st.subheader("🔍 Single Asset Detail")
+
+        selected_asset = st.selectbox(
+            "Choose Asset",
+            df["ticker"].tolist()
+        )
+
+        asset_row = df[df["ticker"] == selected_asset]
+
+        st.write(asset_row)
