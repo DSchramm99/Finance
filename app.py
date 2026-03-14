@@ -1,117 +1,135 @@
 import streamlit as st
-import yfinance as yf
-import plotly.graph_objects as go
 import pandas as pd
 
-# -------------------------
-# Page Configuration
-# -------------------------
-st.set_page_config(
-    page_title="Trading Recommendation Tool",
-    layout="wide"
+from universe.universe_loader import get_index_universe
+from recommendation.engine import generate_recommendations
+
+from backtesting.multi_asset import (
+    optimize_global_parameters,
+    run_global_backtest
 )
 
-# -------------------------
-# Sidebar
-# -------------------------
-st.sidebar.title("Settings")
+# =====================================================
+# Page Setup
+# =====================================================
 
-market = st.sidebar.selectbox(
-    "Market",
+st.set_page_config(layout="wide")
+st.title("📊 Trading System")
+
+
+# =====================================================
+# Region -> Index Kopplung (keine ungültigen Kombinationen)
+# =====================================================
+
+region = st.sidebar.selectbox(
+    "Region",
     ["USA", "Germany"]
 )
 
-index_options = {
-    "USA": ["S&P 500", "NASDAQ"],
-    "Germany": ["DAX", "TecDAX"]
-}
+if region == "USA":
+    index_choice = st.sidebar.selectbox(
+        "Index",
+        ["S&P 500", "Nasdaq 100", "Dow Jones"]
+    )
 
-index = st.sidebar.selectbox(
-    "Index",
-    index_options[market]
+elif region == "Germany":
+    index_choice = st.sidebar.selectbox(
+        "Index",
+        ["DAX", "TecDAX"]
+    )
+
+
+# =====================================================
+# Recommendation Button
+# =====================================================
+
+run_scan = st.sidebar.button("🔎 Run Recommendations")
+
+
+# =====================================================
+# Backtest Settings
+# =====================================================
+
+st.sidebar.header("Backtest (Optional)")
+
+start_date = st.sidebar.date_input(
+    "Start Date",
+    value=pd.to_datetime("2018-01-01")
 )
 
-# For now: manual ticker input (we can auto-map later)
-ticker = st.sidebar.text_input("Ticker Symbol", "AAPL")
-
-timeframe = st.sidebar.selectbox(
-    "Timeframe (Short/Mid Term)",
-    ["1D", "5D", "1W", "1M", "3M", "6M"]
+train_end = st.sidebar.date_input(
+    "Train End Date",
+    value=pd.to_datetime("2022-12-31")
 )
 
-analyze = st.sidebar.button("Run Analysis")
+run_backtest = st.sidebar.button("📈 Run Optimization")
 
-# -------------------------
-# Timeframe Mapping
-# -------------------------
-timeframe_map = {
-    "1D": "1d",
-    "5D": "5d",
-    "1W": "1wk",
-    "1M": "1mo",
-    "3M": "3mo",
-    "6M": "6mo"
-}
 
-# -------------------------
-# Main Layout
-# -------------------------
-st.title("📊 Short / Mid-Term Trading Dashboard")
+# =====================================================
+# Recommendation Engine
+# =====================================================
 
-if analyze:
+if run_scan:
 
-    with st.spinner("Loading data..."):
+    tickers = get_index_universe(index_choice)
 
-        data = yf.download(
-            ticker,
-            period=timeframe_map[timeframe],
-            interval="1d"
-        )
+    st.write(f"{len(tickers)} tickers loaded")
 
-    if data.empty:
-        st.error("No data found for this ticker.")
+    if not tickers:
+        st.error("No tickers available.")
+        st.stop()
+
+    results = generate_recommendations(
+        tickers,
+        k=1.5,
+        drawdown_limit=0.2
+    )
+
+    if results.empty:
+        st.warning("No signals found.")
     else:
-        # -------------------------
-        # Plotly Chart
-        # -------------------------
-        fig = go.Figure()
+        st.subheader("🏆 Top 5 Recommendations")
+        st.dataframe(results.head(5))
 
-        fig.add_trace(
-            go.Candlestick(
-                x=data.index,
-                open=data["Open"],
-                high=data["High"],
-                low=data["Low"],
-                close=data["Close"],
-                name="Price"
-            )
-        )
 
-        fig.update_layout(
-            height=600,
-            xaxis_title="Date",
-            yaxis_title="Price",
-            xaxis_rangeslider_visible=False
-        )
+# =====================================================
+# Backtest Section
+# =====================================================
 
-        st.plotly_chart(fig, use_container_width=True)
+if run_backtest:
 
-        # -------------------------
-        # Placeholder Sections
-        # -------------------------
-        col1, col2, col3 = st.columns(3)
+    tickers = get_index_universe(index_choice)
 
-        with col1:
-            st.subheader("Trend Status")
-            st.info("Coming soon")
+    k_values = [1.0, 1.25, 1.5, 1.75, 2.0]
+    stop_pct_values = [0.03, 0.05, 0.07, 0.10]
 
-        with col2:
-            st.subheader("Risk Score")
-            st.info("Coming soon")
+    best_params = optimize_global_parameters(
+        tickers,
+        str(start_date),
+        str(train_end),
+        k_values,
+        stop_pct_values
+    )
 
-        with col3:
-            st.subheader("Recommendation")
-            st.info("Coming soon")
+    if best_params is None:
+        st.error("No valid parameters found.")
+        st.stop()
 
-        st.subheader("Explanation")
-        st.write("Analysis logic will appear here.")
+    st.write(best_params)
+
+    best_k = best_params["k"]
+    best_stop = best_params["stop_pct"]
+
+    test_results, portfolio_equity = run_global_backtest(
+        tickers,
+        str(start_date),
+        str(train_end),
+        best_k,
+        best_stop
+    )
+
+    if portfolio_equity is not None:
+        st.line_chart(portfolio_equity["Portfolio_Equity"])
+
+    if test_results:
+        st.dataframe(pd.DataFrame(test_results))
