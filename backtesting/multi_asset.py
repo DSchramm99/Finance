@@ -113,9 +113,9 @@ def run_global_backtest(
         if portfolio_equity is None:
             portfolio_equity = equity_curve.copy()
         else:
-            portfolio_equity = portfolio_equity.add(
-                equity_curve,
-                fill_value=0
-            )
+            # Align indices first
+            equity_curve = equity_curve.reindex(portfolio_equity.index).ffill()
+
+            portfolio_equity = portfolio_equity.add(equity_curve, fill_value=0)
 
     return all_test_results, portfolio_equity
