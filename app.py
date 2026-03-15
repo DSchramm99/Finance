@@ -3,11 +3,9 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from universe.universe_loader import get_index_universe
-from recommendation.engine import generate_recommendations
-from backtesting.multi_asset import run_global_backtest
-
 
 # =====================================================
 # Page Setup
@@ -16,20 +14,8 @@ from backtesting.multi_asset import run_global_backtest
 st.set_page_config(layout="wide")
 st.title("📊 Professional Trading System")
 
-
 # =====================================================
-# Settings
-# =====================================================
-
-START_DATE = "2020-01-01"
-TRAIN_END_DATE = "2023-12-31"
-
-DEFAULT_K = 1.5
-DEFAULT_STOP_PCT = 0.05
-
-
-# =====================================================
-# Sidebar - Universe
+# Sidebar
 # =====================================================
 
 st.sidebar.header("Universe")
@@ -47,161 +33,266 @@ else:
         ["DAX", "TecDAX"]
     )
 
+# =====================================================
+# Cached Price Data
+# =====================================================
+
+@st.cache_data(ttl=3600)
+def load_price_data(ticker):
+
+    data = yf.download(
+        ticker,
+        period="2y",
+        auto_adjust=True,
+        progress=False
+    )
+
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    return data
+
 
 # =====================================================
-# Top 5 Signals
+# Ticker Analyse (deterministisch)
+# =====================================================
+
+def analyze_ticker(ticker):
+
+    try:
+        data = load_price_data(ticker)
+
+        if data.empty:
+            return None
+
+        data["SMA20"] = data["Close"].rolling(20).mean()
+        data["SMA50"] = data["Close"].rolling(50).mean()
+        data["SMA200"] = data["Close"].rolling(200).mean()
+        data["ATR"] = (data["High"] - data["Low"]).rolling(14).mean()
+
+        latest = data.iloc[-1]
+
+        if pd.isna(latest["SMA20"]) or pd.isna(latest["ATR"]):
+            return None
+
+        close = float(latest["Close"])
+        sma = float(latest["SMA20"])
+        atr = float(latest["ATR"])
+
+        trend_raw = (close - sma) / sma
+        trend_score = int(np.clip(50 + trend_raw * 200, 0, 100))
+
+        volatility = atr / close
+        risk_score = int(np.clip(100 - (volatility * 500), 0, 100))
+
+        final_score = int(0.6 * trend_score + 0.4 * risk_score)
+
+        entry = close if trend_score > 65 else sma
+        stop = entry - (1.5 * atr)
+        take_profit = entry + 2 * (entry - stop)
+
+        return {
+            "ticker": ticker,
+            "latest_price": close,
+            "entry_price": entry,
+            "stop_level": stop,
+            "take_profit": take_profit,
+            "trend_score": trend_score,
+            "risk_score": risk_score,
+            "final_score": final_score
+        }
+
+    except:
+        return None
+
+
+# =====================================================
+# Generate Signals
 # =====================================================
 
 if st.sidebar.button("🚀 Generate Top 5 Signals"):
 
     tickers = get_index_universe(index_choice)
-    results = generate_recommendations(tickers)
 
-    if results.empty:
-        st.warning("No data available.")
-    else:
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
-        results["risk_score"] = 100 - results["risk_score"]
+    results = []
 
-        score_cols = ["trend_score", "risk_score", "final_score"]
-        results[score_cols] = results[score_cols].round(0).astype(int)
+    for i, ticker in enumerate(tickers):
 
-        results = results.sort_values(
-            by="final_score",
-            ascending=False
-        ).head(5)
+        status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
 
-        st.subheader("🏆 Top 5 Aktien")
-        st.dataframe(results, use_container_width=True)
+        result = analyze_ticker(ticker)
+
+        if result:
+            results.append(result)
+
+        progress_bar.progress((i + 1) / len(tickers))
+
+    status_text.text("Fertig ✅")
+
+    if results:
+        df = pd.DataFrame(results)
+        df = df.sort_values("final_score", ascending=False).head(5)
+        st.session_state["results"] = df
 
 
 # =====================================================
-# Portfolio Backtest
+# Display Results
 # =====================================================
 
-st.sidebar.header("Backtest")
+if "results" in st.session_state:
 
-if st.sidebar.button("📈 Run Portfolio Equity Curve"):
+    results = st.session_state["results"]
 
-    tickers = get_index_universe(index_choice)
+    # Risk invertieren (nur Anzeige)
+    results["risk_score"] = 100 - results["risk_score"]
 
-    with st.spinner("Running portfolio backtest..."):
+    # Firmenname hinzufügen
+    company_names = {}
+    for ticker in results["ticker"]:
+        try:
+            company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
+        except:
+            company_names[ticker] = ticker
 
-        test_results, portfolio_equity = run_global_backtest(
-            tickers=tickers,
-            start_date=START_DATE,
-            train_end_date=TRAIN_END_DATE,
-            k=DEFAULT_K,
-            stop_pct=DEFAULT_STOP_PCT
-        )
+    results["company_name"] = results["ticker"].map(company_names)
 
-    if portfolio_equity is None or portfolio_equity.empty:
-        st.warning("No backtest results available.")
-    else:
+    st.subheader("🏆 Top 5 Aktien")
 
-        # =====================================================
-        # Clean Portfolio Equity
-        # =====================================================
+    display_cols = [
+        "company_name",
+        "latest_price",
+        "entry_price",
+        "stop_level",
+        "take_profit",
+        "trend_score",
+        "risk_score",
+        "final_score"
+    ]
 
-        strategy_equity = portfolio_equity["Portfolio_Equity"].copy()
+    display_df = results[display_cols].rename(columns={
+        "company_name": "Company",
+        "latest_price": "Latest Price",
+        "entry_price": "Entry Price",
+        "stop_level": "Stop Level",
+        "take_profit": "Take Profit",
+        "trend_score": "Trend Score",
+        "risk_score": "Risk Score",
+        "final_score": "Final Score"
+    })
 
-        strategy_equity = strategy_equity.replace([np.inf, -np.inf], np.nan)
-        strategy_equity = strategy_equity.dropna()
+    st.dataframe(
+        display_df.round(2),
+        use_container_width=True,
+        hide_index=True
+    )
 
-        # remove accidental zeros from aggregation bugs
-        strategy_equity = strategy_equity.replace(0, np.nan).ffill()
+    # =====================================================
+    # Chart
+    # =====================================================
 
-        strategy_equity = strategy_equity / strategy_equity.iloc[0]
+    st.subheader("📈 Chart Analyse")
 
-        # =====================================================
-        # Benchmark (Buy & Hold) – SAFE VERSION
-        # =====================================================
+    selected_company = st.selectbox(
+        "Aktie auswählen",
+        results["company_name"]
+    )
 
-        benchmark = yf.download(
-            tickers[0],
-            start=START_DATE,
-            auto_adjust=True,
-            progress=False
-        )
+    selected_row = results[
+        results["company_name"] == selected_company
+    ].iloc[0]
 
-        benchmark = benchmark.dropna()
+    selected_ticker = selected_row["ticker"]
 
-        if not benchmark.empty:
+    time_period = st.selectbox(
+        "Zeitraum",
+        ["1mo", "6mo", "1y"],
+        format_func=lambda x: {
+            "1mo": "1 Monat",
+            "6mo": "6 Monate",
+            "1y": "1 Jahr"
+        }[x]
+    )
 
-            # Benchmark Returns
-            benchmark_returns = benchmark["Close"].pct_change().dropna()
+    data = load_price_data(selected_ticker)
 
-            benchmark_equity = (1 + benchmark_returns).cumprod()
+    data["SMA20"] = data["Close"].rolling(20).mean()
+    data["SMA50"] = data["Close"].rolling(50).mean()
+    data["SMA200"] = data["Close"].rolling(200).mean()
 
-            # Align to strategy index safely
-            benchmark_equity = benchmark_equity.reindex(
-                strategy_equity.index
-            ).ffill()
+    # echtes Rolling Window statt pandas .last("1Y")
 
-            # Normalize
-            benchmark_equity = benchmark_equity / benchmark_equity.iloc[0]
+    if time_period == "1mo":
+        cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
+        plot_data = data[data.index >= cutoff]
 
-        # =====================================================
-        # Metrics
-        # =====================================================
+    elif time_period == "6mo":
+        cutoff = pd.Timestamp.today() - pd.Timedelta(days=182)
+        plot_data = data[data.index >= cutoff]
 
-        returns = strategy_equity.pct_change().dropna()
+    else:  # 1 year
+        cutoff = pd.Timestamp.today() - pd.Timedelta(days=365)
+        plot_data = data[data.index >= cutoff]
 
-        if returns.std() != 0:
-            sharpe = (returns.mean() / returns.std()) * np.sqrt(252)
-        else:
-            sharpe = 0
+    y_values = pd.concat([
+        plot_data["Close"],
+        plot_data["SMA20"],
+        plot_data["SMA50"],
+        plot_data["SMA200"]
+    ]).dropna()
 
-        running_max = strategy_equity.cummax()
-        drawdown = (strategy_equity - running_max) / running_max
-        max_drawdown = drawdown.min()
+    if y_values.empty:
+        st.stop()
 
-        # =====================================================
-        # Plot
-        # =====================================================
+    fig = go.Figure()
 
-        st.subheader("📊 Portfolio Equity vs Benchmark")
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data["Close"],
+        name="Close",
+        line=dict(width=2)
+    ))
 
-        fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data["SMA20"],
+        name="SMA20",
+        line=dict(width=2, dash="dash")
+    ))
 
-        fig.add_trace(
-            go.Scatter(
-                y=strategy_equity,
-                mode="lines",
-                name="Strategy"
-            )
-        )
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data["SMA50"],
+        name="SMA50",
+        line=dict(width=2, dash="dash")
+    ))
 
-        if 'benchmark_equity' in locals():
-            fig.add_trace(
-                go.Scatter(
-                    y=benchmark_equity,
-                    mode="lines",
-                    name="Buy & Hold",
-                    line=dict(dash="dash")
-                )
-            )
+    fig.add_trace(go.Scatter(
+        x=plot_data.index,
+        y=plot_data["SMA200"],
+        name="SMA200",
+        line=dict(width=2, dash="dot")
+    ))
 
-        fig.update_layout(
-            template="plotly_white",
-            height=600,
-            xaxis_title="Time",
-            yaxis_title="Normalized Equity (Start = 1)"
-        )
+    fig.add_hline(y=float(selected_row["entry_price"]), line_dash="dot")
+    fig.add_hline(y=float(selected_row["stop_level"]), line_dash="dash")
+    fig.add_hline(y=float(selected_row["take_profit"]), line_dash="dash")
 
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_yaxes(
+        range=[
+            y_values.min() * 0.95,
+            y_values.max() * 1.05
+        ]
+    )
 
-        # =====================================================
-        # Metrics Display
-        # =====================================================
+    fig.update_layout(
+        template="plotly_white",
+        height=650,
+        title=selected_company,
+        xaxis_title="Zeit",
+        yaxis_title="Preis"
+    )
 
-        st.subheader("📈 Performance Metrics")
-
-        col1, col2 = st.columns(2)
-
-        col1.metric("Sharpe Ratio", f"{sharpe:.2f}")
-        col2.metric("Max Drawdown", f"{max_drawdown:.2%}")
-
-        if test_results:
-            st.subheader("📋 Test Results")
-            st.dataframe(pd.DataFrame(test_results), use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
