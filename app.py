@@ -17,14 +17,15 @@ from database.db_manager import (
 )
 
 # ============================
-# 🔹 NEU: Position Manager
+# 🔹 Position Manager & Signal Engine
 # ============================
 
 from strategy.position_manager import calculate_position_value
+from strategy.signal_engine import generate_signal
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
-# reset_database("TEST", 2000)
+
 # =====================================================
 # Page Setup
 # =====================================================
@@ -33,7 +34,7 @@ st.set_page_config(layout="wide")
 st.title("📊 Professional Trading System")
 
 # =====================================================
-# 🔹 Sidebar Navigation (große Buttons)
+# 🔹 Sidebar Navigation
 # =====================================================
 
 if "page" not in st.session_state:
@@ -53,7 +54,7 @@ if st.sidebar.button("💰 Live Portfolio", use_container_width=True):
 page = st.session_state["page"]
 
 # =====================================================
-# 🔹 NEU: Aktives Trading Budget
+# 🔹 Aktives Trading Budget
 # =====================================================
 
 ACTIVE_BUDGET = 2000
@@ -106,7 +107,7 @@ if page == "Signals":
 
 
     # =====================================================
-    # Ticker Analyse (unverändert)
+    # Ticker Analyse
     # =====================================================
 
     def analyze_ticker(ticker):
@@ -117,41 +118,21 @@ if page == "Signals":
             if data.empty:
                 return None
 
-            data["SMA20"] = data["Close"].rolling(20).mean()
-            data["SMA50"] = data["Close"].rolling(50).mean()
-            data["SMA200"] = data["Close"].rolling(200).mean()
-            data["ATR"] = (data["High"] - data["Low"]).rolling(14).mean()
+            signal_data = generate_signal(data)
 
-            latest = data.iloc[-1]
-
-            if pd.isna(latest["SMA20"]) or pd.isna(latest["ATR"]):
+            if signal_data is None:
                 return None
-
-            close = float(latest["Close"])
-            sma = float(latest["SMA20"])
-            atr = float(latest["ATR"])
-
-            trend_raw = (close - sma) / sma
-            trend_score = int(np.clip(50 + trend_raw * 200, 0, 100))
-
-            volatility = atr / close
-            risk_score = int(np.clip(100 - (volatility * 500), 0, 100))
-
-            final_score = int(0.6 * trend_score + 0.4 * risk_score)
-
-            entry = close if trend_score > 65 else sma
-            stop = entry - (1.5 * atr)
-            take_profit = entry + 2 * (entry - stop)
 
             return {
                 "ticker": ticker,
-                "latest_price": close,
-                "entry_price": entry,
-                "stop_level": stop,
-                "take_profit": take_profit,
-                "trend_score": trend_score,
-                "risk_score": risk_score,
-                "final_score": final_score
+                "latest_price": signal_data["latest_price"],
+                "entry_price": signal_data["entry_price"],
+                "stop_level": signal_data["stop_level"],
+                "take_profit": signal_data["take_profit"],
+                "trend_score": signal_data["trend_score"],
+                "risk_score": signal_data["risk_score"],
+                "final_score": signal_data["final_score"],
+                "signal": signal_data["signal"]
             }
 
         except:
@@ -186,10 +167,16 @@ if page == "Signals":
 
         if results:
             df = pd.DataFrame(results)
-            df = df.sort_values("final_score", ascending=False).head(5)
+            # Filter for BUY signals first, then sort by final score
+            buys = df[df["signal"] == "BUY"]
+            if buys.empty:
+                st.warning("Keine Kauf-Signale gefunden. Zeige Top-Werte nach Score.")
+                df = df.sort_values("final_score", ascending=False).head(5)
+            else:
+                df = buys.sort_values("final_score", ascending=False).head(5)
 
             # =================================================
-            # 🔹 NEU: Investment Berechnung
+            # 🔹 Investment Berechnung
             # =================================================
 
             df["Investment (€)"] = df.apply(
@@ -213,8 +200,6 @@ if page == "Signals":
 
         results = st.session_state["results"]
 
-        results["risk_score"] = 100 - results["risk_score"]
-
         company_names = {}
         for ticker in results["ticker"]:
             try:
@@ -235,7 +220,7 @@ if page == "Signals":
             "trend_score",
             "risk_score",
             "final_score",
-            "Investment (€)"   # 🔹 NEU
+            "Investment (€)"
         ]
 
         display_df = results[display_cols].rename(columns={
@@ -256,7 +241,7 @@ if page == "Signals":
         )
 
         # =====================================================
-        # Chart (UNVERÄNDERT)
+        # Chart
         # =====================================================
 
         st.subheader("📈 Chart Analyse")
@@ -284,18 +269,16 @@ if page == "Signals":
 
         data = load_price_data(selected_ticker)
 
-        data["SMA20"] = data["Close"].rolling(20).mean()
-        data["SMA50"] = data["Close"].rolling(50).mean()
-        data["SMA200"] = data["Close"].rolling(200).mean()
+        # Recalculate indicators for chart
+        from strategy.signal_engine import add_indicators
+        data = add_indicators(data)
 
         if time_period == "1mo":
             cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
             plot_data = data[data.index >= cutoff]
-
         elif time_period == "6mo":
             cutoff = pd.Timestamp.today() - pd.Timedelta(days=182)
             plot_data = data[data.index >= cutoff]
-
         else:
             cutoff = pd.Timestamp.today() - pd.Timedelta(days=365)
             plot_data = data[data.index >= cutoff]
@@ -374,7 +357,8 @@ if page == "Signals":
 
         selected_company = st.selectbox(
             "Aktie wählen",
-            results["company_name"]
+            results["company_name"],
+            key="trade_select_box"
         )
 
         selected_row = results[
@@ -502,7 +486,7 @@ if page in ["Test", "Live"]:
     st.plotly_chart(fig, use_container_width=True)
 
     # =====================================================
-    # 🔹 Profit Berechnung (robust)
+    # 🔹 Profit Berechnung
     # =====================================================
 
     closed_trades = get_closed_trades(mode)
