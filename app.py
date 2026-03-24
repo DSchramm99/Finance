@@ -97,7 +97,8 @@ if page == "Signals":
             ticker,
             period="2y",
             auto_adjust=True,
-            progress=False
+            progress=False,
+            timeout=10
         )
 
         if isinstance(data.columns, pd.MultiIndex):

@@ -136,7 +136,6 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
 
     # Gewinn berechnen
     quantity = position_value / entry
-    quantity = position_value / entry
 
     gross_profit = (exit_price - entry) * quantity
 
@@ -151,13 +150,8 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
         WHERE id = ?
     """, (exit_price, profit, trade_id))
 
-    # Kapital aktualisieren
-    cursor.execute("SELECT capital FROM portfolio WHERE id=1")
-    capital = cursor.fetchone()["capital"]
-
-    new_capital = capital + profit
-
-    cursor.execute("UPDATE portfolio SET capital = ? WHERE id=1", (new_capital,))
+    # Kapital aktualisieren (atomar)
+    cursor.execute("UPDATE portfolio SET capital = capital + ? WHERE id=1", (profit,))
 
     conn.commit()
     conn.close()
