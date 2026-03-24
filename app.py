@@ -503,13 +503,12 @@ if page in ["Test", "Live"]:
         ).sum()
 
     profit_percent = (total_profit / capital * 100) if capital > 0 else 0
-    color = "green" if total_profit >= 0 else "red"
 
-    st.markdown(f"""
-    ### Gesamtprofit:
-    **<span style='color:{color}'>€ {total_profit:,.2f}</span>**  
-    **({profit_percent:,.2f} %)**
-    """, unsafe_allow_html=True)
+    st.metric(
+        label="Gesamtprofit",
+        value=f"€ {total_profit:,.2f}",
+        delta=f"{profit_percent:,.2f} %"
+    )
 
     # =====================================================
     # 🔹 Trade Ansicht Umschalten
