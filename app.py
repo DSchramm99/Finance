@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from universe.universe_loader import get_index_universe
@@ -13,7 +14,9 @@ from database.db_manager import (
     add_trade,
     close_trade,
     get_open_trades,
-    reset_database
+    reset_database,
+    delete_trade,
+    get_closed_trades
 )
 
 # ============================
@@ -21,7 +24,7 @@ from database.db_manager import (
 # ============================
 
 from strategy.position_manager import calculate_position_value
-from strategy.signal_engine import generate_signal
+from strategy.signal_engine import generate_signal, add_indicators
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
@@ -57,14 +60,8 @@ page = st.session_state["page"]
 # 🔹 Aktives Trading Budget
 # =====================================================
 
-ACTIVE_BUDGET = 2000
-
-try:
-    db_capital = get_capital("TEST")
-    if db_capital is not None:
-        ACTIVE_BUDGET = db_capital
-except:
-    pass
+ACTIVE_BUDGET_TEST = get_capital("TEST") or 2000
+ACTIVE_BUDGET_LIVE = get_capital("LIVE") or 2000
 
 # =====================================================
 # Sidebar
@@ -92,17 +89,14 @@ if page == "Signals":
 
     @st.cache_data(ttl=3600)
     def load_price_data(ticker):
-
         data = yf.download(
             ticker,
             period="2y",
             auto_adjust=True,
             progress=False
         )
-
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
-
         return data
 
 
@@ -111,17 +105,12 @@ if page == "Signals":
     # =====================================================
 
     def analyze_ticker(ticker):
-
         try:
             data = load_price_data(ticker)
-
-            if data.empty:
-                return None
+            if data.empty: return None
 
             signal_data = generate_signal(data)
-
-            if signal_data is None:
-                return None
+            if signal_data is None: return None
 
             return {
                 "ticker": ticker,
@@ -134,9 +123,7 @@ if page == "Signals":
                 "final_score": signal_data["final_score"],
                 "signal": signal_data["signal"]
             }
-
-        except:
-            return None
+        except: return None
 
 
     # =====================================================
@@ -144,51 +131,34 @@ if page == "Signals":
     # =====================================================
 
     if st.sidebar.button("🚀 Generate Top 5 Signals"):
-
         tickers = get_index_universe(index_choice)
-
         progress_bar = st.progress(0)
         status_text = st.empty()
-
         results = []
 
         for i, ticker in enumerate(tickers):
-
             status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-
             result = analyze_ticker(ticker)
-
-            if result:
-                results.append(result)
-
+            if result: results.append(result)
             progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
         if results:
             df = pd.DataFrame(results)
-            # Filter for BUY signals first, then sort by final score
-            buys = df[df["signal"] == "BUY"]
-            if buys.empty:
-                st.warning("Keine Kauf-Signale gefunden. Zeige Top-Werte nach Score.")
-                df = df.sort_values("final_score", ascending=False).head(5)
-            else:
-                df = buys.sort_values("final_score", ascending=False).head(5)
+            # SHOW TOP 5 BY SCORE ALWAYS
+            df = df.sort_values("final_score", ascending=False).head(5)
 
-            # =================================================
-            # 🔹 Investment Berechnung
-            # =================================================
-
+            # Investment calculation
             df["Investment (€)"] = df.apply(
                 lambda row: calculate_position_value(
-                    ACTIVE_BUDGET,
+                    ACTIVE_BUDGET_TEST if region == "USA" else ACTIVE_BUDGET_TEST,
                     row["risk_score"],
                     row["entry_price"],
                     row["stop_level"]
                 ),
                 axis=1
             )
-
             st.session_state["results"] = df
 
 
@@ -197,7 +167,6 @@ if page == "Signals":
     # =====================================================
 
     if "results" in st.session_state:
-
         results = st.session_state["results"]
 
         company_names = {}
@@ -206,13 +175,19 @@ if page == "Signals":
                 company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
             except:
                 company_names[ticker] = ticker
-
         results["company_name"] = results["ticker"].map(company_names)
 
         st.subheader("🏆 Top 5 Aktien")
 
+        # Highlight BUY signals
+        def style_signals(row):
+            if row.Signal == "BUY":
+                return ['background-color: #d4edda; color: #155724'] * len(row)
+            return [''] * len(row)
+
         display_cols = [
             "company_name",
+            "signal",
             "latest_price",
             "entry_price",
             "stop_level",
@@ -225,6 +200,7 @@ if page == "Signals":
 
         display_df = results[display_cols].rename(columns={
             "company_name": "Company",
+            "signal": "Signal",
             "latest_price": "Latest Price",
             "entry_price": "Entry Price",
             "stop_level": "Stop Level",
@@ -235,7 +211,7 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.round(2),
+            display_df.round(2).style.apply(style_signals, axis=1),
             use_container_width=True,
             hide_index=True
         )
@@ -243,186 +219,52 @@ if page == "Signals":
         # =====================================================
         # Chart
         # =====================================================
-
         st.subheader("📈 Chart Analyse")
-
-        selected_company = st.selectbox(
-            "Aktie auswählen",
-            results["company_name"]
-        )
-
-        selected_row = results[
-            results["company_name"] == selected_company
-        ].iloc[0]
-
+        selected_company = st.selectbox("Aktie auswählen", results["company_name"])
+        selected_row = results[results["company_name"] == selected_company].iloc[0]
         selected_ticker = selected_row["ticker"]
 
-        time_period = st.selectbox(
-            "Zeitraum",
-            ["1mo", "6mo", "1y"],
-            format_func=lambda x: {
-                "1mo": "1 Monat",
-                "6mo": "6 Monate",
-                "1y": "1 Jahr"
-            }[x]
-        )
-
+        time_period = st.selectbox("Zeitraum", ["1mo", "6mo", "1y"])
         data = load_price_data(selected_ticker)
-
-        # Recalculate indicators for chart
-        from strategy.signal_engine import add_indicators
         data = add_indicators(data)
 
-        if time_period == "1mo":
-            cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
-            plot_data = data[data.index >= cutoff]
-        elif time_period == "6mo":
-            cutoff = pd.Timestamp.today() - pd.Timedelta(days=182)
-            plot_data = data[data.index >= cutoff]
-        else:
-            cutoff = pd.Timestamp.today() - pd.Timedelta(days=365)
-            plot_data = data[data.index >= cutoff]
+        if time_period == "1mo": cutoff = pd.Timestamp.today() - pd.Timedelta(days=30)
+        elif time_period == "6mo": cutoff = pd.Timestamp.today() - pd.Timedelta(days=182)
+        else: cutoff = pd.Timestamp.today() - pd.Timedelta(days=365)
+        plot_data = data[data.index >= cutoff]
 
-        y_values = pd.concat([
-            plot_data["Close"],
-            plot_data["SMA20"],
-            plot_data["SMA50"],
-            plot_data["SMA200"]
-        ]).dropna()
-
-        if y_values.empty:
-            st.stop()
-
-        fig = go.Figure()
-
-        fig.add_trace(go.Scatter(
-            x=plot_data.index,
-            y=plot_data["Close"],
-            name="Close",
-            line=dict(width=2)
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=plot_data.index,
-            y=plot_data["SMA20"],
-            name="SMA20",
-            line=dict(width=2, dash="dash")
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=plot_data.index,
-            y=plot_data["SMA50"],
-            name="SMA50",
-            line=dict(width=2, dash="dash")
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=plot_data.index,
-            y=plot_data["SMA200"],
-            name="SMA200",
-            line=dict(width=2, dash="dot")
-        ))
-
-        fig.add_hline(y=float(selected_row["entry_price"]), line_dash="dot")
-        fig.add_hline(y=float(selected_row["stop_level"]), line_dash="dash")
-        fig.add_hline(y=float(selected_row["take_profit"]), line_dash="dash")
-
-        fig.update_yaxes(
-            range=[
-                y_values.min() * 0.95,
-                y_values.max() * 1.05
-            ]
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            height=650,
-            title=selected_company,
-            xaxis_title="Zeit",
-            yaxis_title="Preis"
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
+        y_values = pd.concat([plot_data["Close"], plot_data["SMA20"], plot_data["SMA50"], plot_data["SMA200"]]).dropna()
+        if not y_values.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=plot_data.index, y=plot_data["Close"], name="Close"))
+            fig.add_trace(go.Scatter(x=plot_data.index, y=plot_data["SMA20"], name="SMA20", line=dict(dash="dash")))
+            fig.add_trace(go.Scatter(x=plot_data.index, y=plot_data["SMA50"], name="SMA50", line=dict(dash="dash")))
+            fig.add_trace(go.Scatter(x=plot_data.index, y=plot_data["SMA200"], name="SMA200", line=dict(dash="dot")))
+            fig.add_hline(y=float(selected_row["entry_price"]), line_dash="dot")
+            fig.add_hline(y=float(selected_row["stop_level"]), line_dash="dash")
+            fig.add_hline(y=float(selected_row["take_profit"]), line_dash="dash")
+            fig.update_layout(template="plotly_white", height=500, title=selected_company)
+            st.plotly_chart(fig, use_container_width=True)
 
 
     # =====================================================
     # Trade Eröffnung
     # =====================================================
-
     if "results" in st.session_state:
-
         st.subheader("📥 Trade eröffnen")
-
         results = st.session_state["results"]
-
-        selected_company = st.selectbox(
-            "Aktie wählen",
-            results["company_name"],
-            key="trade_select_box"
-        )
-
-        selected_row = results[
-            results["company_name"] == selected_company
-        ].iloc[0]
+        selected_company = st.selectbox("Aktie wählen", results["company_name"], key="trade_select_box")
+        selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-
-            db_mode = st.selectbox(
-            "Modus",
-            ["TEST", "LIVE"]
-            )
-
-            entry_price = st.number_input(
-                "Kaufkurs",
-                value=round(float(selected_row["entry_price"]), 2)
-            )
-
-            position_value = st.number_input(
-                "Positionsgröße (€)",
-                value=float(selected_row["Investment (€)"])
-            )
-
-            fees = st.number_input(
-                "Kaufgebühren (€)",
-                value=0.0
-            )
-
-            st.write("Stop Loss (fix):", round(selected_row["stop_level"], 2))
-            st.write("Take Profit (fix):", round(selected_row["take_profit"], 2))
-
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
+            fees = st.number_input("Kaufgebühren (€)", value=0.0)
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
-
-                from database.db_manager import add_trade
-
-                # Verfügbares Kapital berechnen
-                capital = get_capital(db_mode) or 0
-                open_trades = get_open_trades(db_mode)
-
-                invested = 0
-                if not open_trades.empty:
-                    invested = open_trades["position_value"].sum()
-
-                available_capital = capital - invested
-
-                # Gesamtkosten beim Kauf
-                total_cost = position_value + fees
-
-                if total_cost > available_capital:
-                    st.error("❌ Nicht genug verfügbares Kapital (inkl. Gebühren)!")
-                    st.stop()
-
-                add_trade(
-                    db_mode,
-                    selected_row["ticker"],
-                    entry_price,
-                    selected_row["stop_level"],
-                    selected_row["take_profit"],
-                    position_value,
-                    fees
-                )
-
+                add_trade(db_mode, selected_row["ticker"], entry_price, selected_row["stop_level"], selected_row["take_profit"], position_value, fees)
                 st.success("Trade gespeichert!")
 
 # =====================================================
@@ -430,138 +272,118 @@ if page == "Signals":
 # =====================================================
 
 if page in ["Test", "Live"]:
-
     mode = "TEST" if page == "Test" else "LIVE"
-
     st.header("🧪 Test Portfolio" if mode == "TEST" else "💰 Live Portfolio")
 
-    from database.db_manager import (
-        get_capital,
-        get_open_trades,
-        get_closed_trades,
-        close_trade,
-        delete_trade
-    )
+    # REAL TIME MONITORING FOR OPEN TRADES
+    open_trades_df = get_open_trades(mode)
+    if not open_trades_df.empty:
+        st.subheader("📡 Real-time Monitoring")
 
-    import plotly.graph_objects as go
+        monitored_data = []
+        for _, trade in open_trades_df.iterrows():
+            ticker = trade["ticker"]
+            try:
+                # Fetch data since trade or last 3 months
+                start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                if trade["timestamp"]:
+                    # Just to be safe, fetch a bit earlier than trade
+                    start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
-    # =====================================================
-    # 🔹 Portfolio Übersicht
-    # =====================================================
+                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+                if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
 
-    capital = get_capital(mode) or 0
-    open_trades = get_open_trades(mode)
+                # Indicators
+                data = add_indicators(data)
 
-    invested = 0
-    if not open_trades.empty:
-        invested = open_trades["position_value"].sum()
+                # Highest price since trade timestamp
+                if trade["timestamp"]:
+                    trade_time = pd.Timestamp(trade["timestamp"])
+                    data_since_trade = data[data.index >= trade_time]
+                    if data_since_trade.empty: data_since_trade = data.tail(1)
+                    highest_price = data_since_trade["High"].max()
+                else:
+                    highest_price = data["High"].tail(10).max() # fallback
 
-    uninvested = max(capital - invested, 0)
+                latest = data.iloc[-1]
+                price = float(latest["Close"])
+                atr = float(latest["ATR"])
 
-    # =====================================================
-    # 🔹 Kapital Chart
-    # =====================================================
+                # Chandelier logic: trailing stop from highest price
+                chandelier_stop = highest_price - (1.5 * atr)
+                actual_stop = max(trade["stop"], chandelier_stop)
+                tp_level = trade["take_profit"]
 
-    fig = go.Figure()
+                action = "HOLD"
+                row_color = ""
+                if price <= actual_stop:
+                    action = "SELL (STOP)"
+                    row_color = 'background-color: #f8d7da; color: #721c24' # Red
+                elif price >= tp_level:
+                    action = "SELL (TP)"
+                    row_color = 'background-color: #d4edda; color: #155724' # Green
 
-    fig.add_trace(go.Bar(
-        name="Investiert",
-        x=["Kapital"],
-        y=[invested]
-    ))
+                monitored_data.append({
+                    "id": trade["id"],
+                    "Ticker": ticker,
+                    "Price": price,
+                    "Entry": trade["entry"],
+                    "Profit (%)": (price / trade["entry"] - 1) * 100,
+                    "Stop (Current)": actual_stop,
+                    "Take Profit": tp_level,
+                    "Action": action,
+                    "_color": row_color
+                })
+            except Exception as e:
+                st.error(f"Error updating {ticker}: {e}")
 
-    fig.add_trace(go.Bar(
-        name="Uninvestiert",
-        x=["Kapital"],
-        y=[uninvested]
-    ))
+        if monitored_data:
+            mon_df = pd.DataFrame(monitored_data)
+            def style_mon(row):
+                return [row._color] * len(row)
 
-    fig.update_layout(
-        barmode="stack",
-        title="Kapitalverteilung",
-        template="plotly_white",
-        height=400
-    )
+            st.dataframe(
+                mon_df.drop(columns=["_color"]).round(2).style.apply(style_mon, axis=1),
+                use_container_width=True,
+                hide_index=True
+            )
 
-    st.plotly_chart(fig, use_container_width=True)
+    # PORTFOLIO MANAGEMENT
+    st.divider()
+    capital = get_capital(mode) or 2000
+    st.subheader(f"📂 Trades (Budget: € {capital:,.2f})")
 
-    # =====================================================
-    # 🔹 Profit Berechnung
-    # =====================================================
+    view_mode = st.radio("Ansicht", ["Offene Trades", "Abgeschlossene Trades"], key=f"{mode}_view", horizontal=True)
+    df_trades = open_trades_df if view_mode == "Offene Trades" else get_closed_trades(mode)
 
-    closed_trades = get_closed_trades(mode)
-
-    total_profit = 0
-
-    required_cols = {"exit_price", "entry", "position_value"}
-
-    if not closed_trades.empty and required_cols.issubset(closed_trades.columns):
-
-        total_profit = (
-            (closed_trades["exit_price"] - closed_trades["entry"])
-            * (closed_trades["position_value"] / closed_trades["entry"])
-        ).sum()
-
-    profit_percent = (total_profit / capital * 100) if capital > 0 else 0
-    color = "green" if total_profit >= 0 else "red"
-
-    st.markdown(f"""
-    ### Gesamtprofit:
-    **<span style='color:{color}'>€ {total_profit:,.2f}</span>**  
-    **({profit_percent:,.2f} %)**
-    """, unsafe_allow_html=True)
-
-    # =====================================================
-    # 🔹 Trade Ansicht Umschalten
-    # =====================================================
-
-    view_mode = st.radio(
-        "Ansicht",
-        ["Offene Trades", "Abgeschlossene Trades"],
-        key=f"{mode}_view_mode"
-    )
-
-    if view_mode == "Offene Trades":
-        df = open_trades
-    else:
-        df = closed_trades
-
-    if df.empty:
+    if df_trades.empty:
         st.info("Keine Trades vorhanden.")
     else:
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df_trades, use_container_width=True)
 
-    # =====================================================
-    # 🔹 Aktionen nur bei offenen Trades
-    # =====================================================
+        # ACTIONS
+        st.subheader("🛠 Aktionen")
+        selected_id = st.selectbox("Trade ID auswählen", df_trades["id"], key=f"{mode}_id_select")
 
-    if view_mode == "Offene Trades" and not open_trades.empty:
-
-        trade_id = st.selectbox(
-            "Trade auswählen",
-            open_trades["id"],
-            key=f"{mode}_trade_select"
-        )
-
-        col1, col2 = st.columns(2)
-
+        col1, col2, col3 = st.columns(3)
         with col1:
-
-            exit_price = st.number_input(
-                "Exit Preis",
-                key=f"{mode}_exit_price"
-            )
-
-            sell_fee = st.number_input(
-                "Verkaufsgebühr (€)",
-                value=0.0,
-                key=f"{mode}_sell_fee"
-            )
-
-            if st.button(
-                "Trade schließen",
-                key=f"{mode}_close_btn"
-            ):
-                close_trade(mode, trade_id, exit_price, sell_fee)
-                st.success("Trade geschlossen")
+            if view_mode == "Offene Trades":
+                st.write("Trade schließen:")
+                exit_price = st.number_input("Exit Preis", key=f"{mode}_exit_val")
+                fee = st.number_input("Verkaufsgebühr", value=0.0, key=f"{mode}_fee_val")
+                if st.button("Close Trade", key=f"{mode}_close_btn_act"):
+                    close_trade(mode, selected_id, exit_price, fee)
+                    st.rerun()
+        with col2:
+            st.write("Trade löschen:")
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+                delete_trade(mode, selected_id)
                 st.rerun()
+
+    if mode == "TEST":
+        st.divider()
+        st.subheader("⚠️ Database Maintenance")
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+            reset_database("TEST", 2000)
+            st.success("Database Reset successful!")
+            st.rerun()

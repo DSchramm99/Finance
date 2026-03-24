@@ -22,3 +22,25 @@ Failed to get ticker 'CVNA' reason: Failed to perform, curl: (28) Connection tim
 Failed to get ticker 'SCHW' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
 /app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
   tables = pd.read_html(response.text)
+/app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
+  tables = pd.read_html(response.text)
+$BRK.B: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['BRK.B']: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['TECH']: TypeError("'NoneType' object is not subscriptable")
+
+1 Failed download:
+['BX']: TypeError("'NoneType' object is not subscriptable")
+$BF.B: possibly delisted; no price data found  (period=2y)
+
+1 Failed download:
+['BF.B']: possibly delisted; no price data found  (period=2y)
+
+1 Failed download:
+['CMCSA']: TypeError("'NoneType' object is not subscriptable")
+
+1 Failed download:
+['COO']: TypeError("'NoneType' object is not subscriptable")
