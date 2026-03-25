@@ -152,16 +152,23 @@ if page == "Signals":
 
         results = []
 
-        for i, ticker in enumerate(tickers):
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_ticker = {
+                executor.submit(analyze_ticker, ticker): ticker
+                for ticker in tickers
+            }
 
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(
+                    f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})"
+                )
 
-            result = analyze_ticker(ticker)
+                result = future.result()
+                if result:
+                    results.append(result)
 
-            if result:
-                results.append(result)
-
-            progress_bar.progress((i + 1) / len(tickers))
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
@@ -200,12 +207,21 @@ if page == "Signals":
 
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
+        def fetch_company_name(ticker):
             try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
+                return ticker, yf.Ticker(ticker).info.get("longName", ticker)
             except:
-                company_names[ticker] = ticker
+                return ticker, ticker
+
+        company_names = {}
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {
+                executor.submit(fetch_company_name, ticker): ticker
+                for ticker in results["ticker"]
+            }
+            for future in as_completed(future_to_ticker):
+                ticker, name = future.result()
+                company_names[ticker] = name
 
         results["company_name"] = results["ticker"].map(company_names)
 
