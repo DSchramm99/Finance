@@ -339,11 +339,17 @@ if page in ["Test", "Live"]:
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
+
+            # Identify columns to display (exclude internal _color)
+            display_cols = [c for c in mon_df.columns if c != "_color"]
+
             def style_mon(row):
-                return [row._color] * len(row)
+                color = row["_color"]
+                return [color] * len(row)
 
             st.dataframe(
-                mon_df.drop(columns=["_color"]).round(2).style.apply(style_mon, axis=1),
+                mon_df.style.apply(style_mon, axis=1),
+                column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
             )
