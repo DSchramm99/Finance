@@ -21,8 +21,6 @@ def verify_profitability():
         for idx in idx_list:
             try:
                 tickers = get_index_universe(idx)
-                # Clean up tickers (some might have names or extra info)
-                # For Dow Jones and TecDAX local CSVs, the loader might need help
 
                 clean_tickers = []
                 for t in tickers:
@@ -42,14 +40,14 @@ def verify_profitability():
             except Exception as e:
                 print(f"Error loading {idx}: {e}")
 
-    # Remove duplicates
+    # Remove duplicates and filter bad ones
     selected_stocks = list(set(selected_stocks))
-    # Filter out known bad ones from previous run if any
     selected_stocks = [s for s in selected_stocks if s not in ["MEDIAN", "PRICE", "TOTAL"]]
 
     print(f"Verifying profitability on {len(selected_stocks)} diverse stocks...")
 
-    all_results = []
+    results_unleveraged = []
+    results_leveraged = []
 
     # Backtest parameters
     k_atr = 1.5
@@ -66,46 +64,60 @@ def verify_profitability():
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
 
-            _, metrics = run_backtest(data, k_atr=k_atr, rr_ratio=rr_ratio)
-
-            all_results.append({
+            # Unleveraged Backtest
+            _, metrics_u = run_backtest(data, k_atr=k_atr, rr_ratio=rr_ratio, leverage_mode=False)
+            results_unleveraged.append({
                 "Ticker": ticker,
-                "Return (%)": round(metrics["total_return"] * 100, 2),
-                "Max DD (%)": round(metrics["max_drawdown"] * 100, 2),
-                "Profit Factor": round(metrics["profit_factor"], 2) if metrics["profit_factor"] != np.inf else 10.0,
-                "Win Rate (%)": round(metrics["win_rate"] * 100, 2),
-                "Trades": metrics["trade_count"]
+                "Return (%)": round(metrics_u["total_return"] * 100, 2),
+                "Max DD (%)": round(metrics_u["max_drawdown"] * 100, 2),
+                "Profit Factor": round(metrics_u["profit_factor"], 2) if metrics_u["profit_factor"] != np.inf else 10.0,
+                "Win Rate (%)": round(metrics_u["win_rate"] * 100, 2),
+                "Trades": metrics_u["trade_count"]
             })
+
+            # Leveraged Backtest
+            _, metrics_l = run_backtest(data, k_atr=k_atr, rr_ratio=rr_ratio, leverage_mode=True)
+            results_leveraged.append({
+                "Ticker": ticker,
+                "Return (%)": round(metrics_l["total_return"] * 100, 2),
+                "Max DD (%)": round(metrics_l["max_drawdown"] * 100, 2),
+                "Profit Factor": round(metrics_l["profit_factor"], 2) if metrics_l["profit_factor"] != np.inf else 10.0,
+                "Win Rate (%)": round(metrics_l["win_rate"] * 100, 2),
+                "Trades": metrics_l["trade_count"]
+            })
+
         except Exception as e:
             print(f"Error backtesting {ticker}: {e}")
 
     # Aggregate results
-    if not all_results:
+    if not results_unleveraged:
         print("No results to aggregate.")
         return None
 
-    results_df = pd.DataFrame(all_results)
+    df_u = pd.DataFrame(results_unleveraged)
+    df_l = pd.DataFrame(results_leveraged)
 
     summary = {
-        "Avg Return (%)": results_df["Return (%)"].mean(),
-        "Median Return (%)": results_df["Return (%)"].median(),
-        "Avg Max DD (%)": results_df["Max DD (%)"].mean(),
-        "Avg Profit Factor": results_df["Profit Factor"].mean(),
-        "Avg Win Rate (%)": results_df["Win Rate (%)"].mean(),
-        "Total Trades": results_df["Trades"].sum(),
-        "Profitable Stocks (%)": (results_df["Return (%)"] > 0).mean() * 100
+        "Unleveraged Avg Return (%)": df_u["Return (%)"].mean(),
+        "Leveraged Avg Return (%)": df_l["Return (%)"].mean(),
+        "Unleveraged Profitable Stocks (%)": (df_u["Return (%)"] > 0).mean() * 100,
+        "Leveraged Profitable Stocks (%)": (df_l["Return (%)"] > 0).mean() * 100,
+        "Unleveraged Avg Max DD (%)": df_u["Max DD (%)"].mean(),
+        "Leveraged Avg Max DD (%)": df_l["Max DD (%)"].mean(),
+        "Total Trades (Unleveraged)": df_u["Trades"].sum(),
+        "Total Trades (Leveraged)": df_l["Trades"].sum()
     }
 
-    print("\n\n" + "="*30)
-    print("BACKTEST SUMMARY")
-    print("="*30)
+    print("\n\n" + "="*40)
+    print("BACKTEST COMPARISON: UNLEVERAGED VS LEVERAGED")
+    print("="*40)
     for key, val in summary.items():
         print(f"{key}: {val:.2f}")
-    print("="*30)
+    print("="*40)
 
     # Save detailed results to CSV
-    results_df.to_csv("backtesting/verification_results.csv", index=False)
-    print("\nDetailed results saved to backtesting/verification_results.csv")
+    df_l.to_csv("backtesting/verification_results_leveraged.csv", index=False)
+    print("\nDetailed results saved to backtesting/verification_results_leveraged.csv")
 
     return summary
 

@@ -38,7 +38,6 @@ def init_db(mode, start_capital=2000):
         )
     """)
 
-    # Added timestamp column
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS trades (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,15 +50,20 @@ def init_db(mode, start_capital=2000):
             fees REAL,
             profit REAL,
             status TEXT,
-            timestamp TEXT
+            timestamp TEXT,
+            leverage REAL
         )
     """)
 
-    # Migration: check if timestamp exists, if not add it
+    # Migration: check if columns exist
     cursor.execute("PRAGMA table_info(trades)")
     columns = [col[1] for col in cursor.fetchall()]
+
     if "timestamp" not in columns:
         cursor.execute("ALTER TABLE trades ADD COLUMN timestamp TEXT")
+
+    if "leverage" not in columns:
+        cursor.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1.0")
 
     cursor.execute("SELECT * FROM portfolio WHERE id=1")
     if cursor.fetchone() is None:
@@ -101,7 +105,7 @@ def set_capital(amount, mode="TEST"):
 # Trade Functions
 # =====================================================
 
-def add_trade(mode, ticker, entry, stop, tp, position_value, fees):
+def add_trade(mode, ticker, entry, stop, tp, position_value, fees, leverage=1.0):
     conn = get_connection(mode)
     cursor = conn.cursor()
 
@@ -109,9 +113,9 @@ def add_trade(mode, ticker, entry, stop, tp, position_value, fees):
 
     cursor.execute("""
         INSERT INTO trades
-        (ticker, entry, stop, take_profit, position_value, fees, status, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?)
-    """, (ticker, entry, stop, tp, position_value, fees, timestamp))
+        (ticker, entry, stop, take_profit, position_value, fees, status, timestamp, leverage)
+        VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
+    """, (ticker, entry, stop, tp, position_value, fees, timestamp, leverage))
 
     conn.commit()
     conn.close()
@@ -130,9 +134,13 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
     entry = trade["entry"]
     position_value = trade["position_value"]
     fees = trade["fees"]
+    # Ensure leverage is at least 1.0 if None
+    leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
 
     quantity = position_value / entry
-    gross_profit = (exit_price - entry) * quantity
+
+    # Leveraged profit calculation
+    gross_profit = (exit_price - entry) * quantity * leverage
     profit = gross_profit - sell_fee - fees
 
     cursor.execute("""
@@ -144,9 +152,11 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
     """, (exit_price, profit, trade_id))
 
     cursor.execute("SELECT capital FROM portfolio WHERE id=1")
-    capital = cursor.fetchone()["capital"]
-    new_capital = capital + profit
-    cursor.execute("UPDATE portfolio SET capital = ? WHERE id=1", (new_capital,))
+    row = cursor.fetchone()
+    if row:
+        capital = row["capital"]
+        new_capital = capital + profit
+        cursor.execute("UPDATE portfolio SET capital = ? WHERE id=1", (new_capital,))
 
     conn.commit()
     conn.close()

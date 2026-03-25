@@ -83,6 +83,10 @@ if page == "Signals":
             ["DAX", "TecDAX"]
         )
 
+    # 🔹 Hebel-Modus Toggle
+    leverage_mode = st.sidebar.radio("Modus", ["Ohne Hebel", "Gehebelt"], index=0)
+    is_leveraged = leverage_mode == "Gehebelt"
+
     # =====================================================
     # Cached Price Data
     # =====================================================
@@ -104,12 +108,12 @@ if page == "Signals":
     # Ticker Analyse
     # =====================================================
 
-    def analyze_ticker(ticker):
+    def analyze_ticker(ticker, lev_mode):
         try:
             data = load_price_data(ticker)
             if data.empty: return None
 
-            signal_data = generate_signal(data)
+            signal_data = generate_signal(data, leverage_mode=lev_mode)
             if signal_data is None: return None
 
             return {
@@ -121,7 +125,8 @@ if page == "Signals":
                 "trend_score": signal_data["trend_score"],
                 "risk_score": signal_data["risk_score"],
                 "final_score": signal_data["final_score"],
-                "signal": signal_data["signal"]
+                "signal": signal_data["signal"],
+                "leverage": signal_data["leverage"]
             }
         except: return None
 
@@ -138,7 +143,7 @@ if page == "Signals":
 
         for i, ticker in enumerate(tickers):
             status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker)
+            result = analyze_ticker(ticker, is_leveraged)
             if result: results.append(result)
             progress_bar.progress((i + 1) / len(tickers))
 
@@ -146,7 +151,6 @@ if page == "Signals":
 
         if results:
             df = pd.DataFrame(results)
-            # SHOW TOP 5 BY SCORE ALWAYS
             df = df.sort_values("final_score", ascending=False).head(5)
 
             # Investment calculation
@@ -177,7 +181,7 @@ if page == "Signals":
                 company_names[ticker] = ticker
         results["company_name"] = results["ticker"].map(company_names)
 
-        st.subheader("🏆 Top 5 Aktien")
+        st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
         # Highlight BUY signals
         def style_signals(row):
@@ -188,6 +192,7 @@ if page == "Signals":
         display_cols = [
             "company_name",
             "signal",
+            "leverage",
             "latest_price",
             "entry_price",
             "stop_level",
@@ -201,6 +206,7 @@ if page == "Signals":
         display_df = results[display_cols].rename(columns={
             "company_name": "Company",
             "signal": "Signal",
+            "leverage": "Leverage",
             "latest_price": "Latest Price",
             "entry_price": "Entry Price",
             "stop_level": "Stop Level",
@@ -216,7 +222,8 @@ if page == "Signals":
                 "Entry Price": "{:.2f}",
                 "Stop Level": "{:.2f}",
                 "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}"
+                "Investment (€)": "{:.2f}",
+                "Leverage": "{:.1f}x"
             }),
             use_container_width=True,
             hide_index=True
@@ -267,10 +274,11 @@ if page == "Signals":
             entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
             position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
             fees = st.number_input("Kaufgebühren (€)", value=0.0)
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
-                add_trade(db_mode, selected_row["ticker"], entry_price, selected_row["stop_level"], selected_row["take_profit"], position_value, fees)
+                add_trade(db_mode, selected_row["ticker"], entry_price, selected_row["stop_level"], selected_row["take_profit"], position_value, fees, leverage)
                 st.success("Trade gespeichert!")
 
 # =====================================================
@@ -296,7 +304,6 @@ if page in ["Test", "Live"]:
     col_v1, col_v2 = st.columns([1, 2])
 
     with col_v1:
-        # Bar chart: Invested vs. Cash
         fig_bar = go.Figure()
         fig_bar.add_trace(go.Bar(name="Investiert", x=["Kapital"], y=[invested]))
         fig_bar.add_trace(go.Bar(name="Uninvestiert", x=["Kapital"], y=[cash]))
@@ -304,7 +311,6 @@ if page in ["Test", "Live"]:
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_v2:
-        # Total Profit Large Numbers
         total_profit_abs = 0
         if not closed_trades_df.empty:
             total_profit_abs = closed_trades_df["profit"].sum()
@@ -320,11 +326,9 @@ if page in ["Test", "Live"]:
         </div>
         """, unsafe_allow_html=True)
 
-        # Line chart: Equity Curve
         if not closed_trades_df.empty:
-            # Simple equity curve based on closed trades
             closed_trades_df = closed_trades_df.sort_values("timestamp")
-            equity_curve = [capital - total_profit_abs] # Start value
+            equity_curve = [capital - total_profit_abs]
             for p in closed_trades_df["profit"]:
                 equity_curve.append(equity_curve[-1] + p)
 
@@ -341,7 +345,6 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                # Fetch company name (cached)
                 @st.cache_data(ttl=86400)
                 def get_company_name(t):
                     try: return yf.Ticker(t).info.get("longName", t)
@@ -349,7 +352,6 @@ if page in ["Test", "Live"]:
 
                 comp_name = get_company_name(ticker)
 
-                # Fetch price data
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
                     start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -369,14 +371,21 @@ if page in ["Test", "Live"]:
                 latest = data.iloc[-1]
                 price = float(latest["Close"])
                 atr = float(latest["ATR"])
+                leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
 
-                chandelier_stop = highest_price - (1.5 * atr)
+                # Chandelier trailing stop
+                effective_k = 1.5 + (max(0, leverage - 1) * 0.5)
+                chandelier_stop = highest_price - (effective_k * atr)
                 actual_stop = max(trade["stop"], chandelier_stop)
                 tp_level = trade["take_profit"]
 
                 action = "HOLD"
                 row_color = ""
-                if price <= actual_stop:
+                # Check liquidation
+                if leverage > 1.0 and price <= trade["entry"] * (1 - (1.0 / leverage)):
+                    action = "LIQUIDATION"
+                    row_color = 'background-color: #f8d7da; color: #721c24'
+                elif price <= actual_stop:
                     action = "SELL (STOP)"
                     row_color = 'background-color: #f8d7da; color: #721c24'
                 elif price >= tp_level:
@@ -389,9 +398,10 @@ if page in ["Test", "Live"]:
                     "Ticker": ticker,
                     "Price": price,
                     "Entry": trade["entry"],
-                    "Profit (%)": (price / trade["entry"] - 1) * 100,
-                    "Stop (Current)": actual_stop,
+                    "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
+                    "Stop": actual_stop,
                     "Take Profit": tp_level,
+                    "Leverage": leverage,
                     "Action": action,
                     "_color": row_color
                 })
@@ -407,9 +417,10 @@ if page in ["Test", "Live"]:
                 mon_df.style.apply(style_mon, axis=1).format({
                     "Price": "{:.2f}",
                     "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}",
-                    "Stop (Current)": "{:.2f}",
-                    "Take Profit": "{:.2f}"
+                    "Profit (%)": "{:.2f}%",
+                    "Stop": "{:.2f}",
+                    "Take Profit": "{:.2f}",
+                    "Leverage": "{:.1f}x"
                 }),
                 column_order=display_cols,
                 use_container_width=True,
@@ -425,7 +436,6 @@ if page in ["Test", "Live"]:
     if df_trades.empty:
         st.info("Keine Trades vorhanden.")
     else:
-        # Formatting all numbers to 2 decimal places except id
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
 
@@ -434,7 +444,6 @@ if page in ["Test", "Live"]:
             use_container_width=True
         )
 
-        # ACTIONS
         st.subheader("🛠 Aktionen")
         selected_id = st.selectbox("Trade ID auswählen", df_trades["id"], key=f"{mode}_id_select")
 
