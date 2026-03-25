@@ -1,22 +1,24 @@
 import pandas as pd
 import numpy as np
-from strategy.signal_engine import add_indicators, calculate_scores
+from strategy.signal_engine import add_indicators, calculate_scores, recommend_leverage
 
 def run_backtest(
     df,
     k_atr=1.5,
     rr_ratio=2.0,
+    leverage_mode=False,
     start_capital=2000,
     return_equity=False
 ):
     """
-    Backtest using the improved strategy setup:
+    Backtest using the improved strategy setup with optional leverage:
     - SMA20 trend filter
     - SMA200 long term trend filter
     - RSI filter
     - ATR-based scoring
     - Chandelier Trailing Stop
     - Chandelier Take Profit
+    - Leverage calculation and liquidation monitoring
     """
     df = add_indicators(df)
 
@@ -32,6 +34,7 @@ def run_backtest(
     highest_price = 0.0
     stop_level = 0.0
     take_profit = 0.0
+    leverage = 1.0
 
     capital = start_capital
     equity_curve = []
@@ -56,14 +59,21 @@ def run_backtest(
         # ENTRY
         # =====================
         if position == 0:
-            # Improved entry condition aligned with signal_engine.py
             if trend_score > 65 and risk_score > 40 and price > sma200 and rsi > 45:
                 position = 1
                 entry_price = price
                 highest_price = price
 
+                if leverage_mode:
+                    leverage = recommend_leverage(risk_score)
+                else:
+                    leverage = 1.0
+
+                # Adjusted ATR multiplier for leverage (same as in signal_engine.py)
+                effective_k = k_atr + (max(0, leverage - 1) * 0.5)
+
                 # Initial levels
-                risk_distance = k_atr * atr
+                risk_distance = effective_k * atr
                 stop_level = entry_price - risk_distance
                 take_profit = entry_price + (rr_ratio * risk_distance)
 
@@ -73,12 +83,21 @@ def run_backtest(
         else:
             # Trailing Stop (Chandelier)
             highest_price = max(highest_price, price)
-            current_stop = highest_price - (k_atr * atr)
+            effective_k = k_atr + (max(0, leverage - 1) * 0.5)
+            current_stop = highest_price - (effective_k * atr)
             stop_level = max(stop_level, current_stop)
 
             # EXIT Conditions
             exit_reason = None
-            if price <= stop_level:
+            exit_price = 0.0
+
+            # Check for liquidation (Equity drops to zero)
+            # Loss = (entry - price) * leverage
+            # If price <= entry * (1 - 1/leverage)
+            if leverage > 1.0 and price <= entry_price * (1 - (1.0 / leverage)):
+                exit_reason = "LIQUIDATION"
+                exit_price = entry_price * (1 - (1.0 / leverage))
+            elif price <= stop_level:
                 exit_reason = "STOP"
                 exit_price = stop_level
             elif price >= take_profit:
@@ -86,10 +105,16 @@ def run_backtest(
                 exit_price = take_profit
 
             if exit_reason:
-                trade_return = (exit_price / entry_price) - 1
+                trade_return = ((exit_price / entry_price) - 1) * leverage
                 capital *= (1 + trade_return)
                 trades.append(trade_return)
                 position = 0
+
+                # Prevent negative capital
+                if capital <= 0:
+                    capital = 0
+                    equity_curve.extend([0] * (len(df) - len(equity_curve)))
+                    break
 
         equity_curve.append(capital)
 

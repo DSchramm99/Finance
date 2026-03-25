@@ -69,22 +69,44 @@ def calculate_scores(row):
     return trend_score, risk_score, final_score
 
 # =====================================================
+# Leverage Logic
+# =====================================================
+
+def recommend_leverage(risk_score):
+    """
+    Recommends leverage based on the risk score (volatility).
+    Higher risk score (lower volatility) allows for higher leverage.
+    """
+    if risk_score >= 80:
+        return 5.0
+    elif risk_score >= 70:
+        return 3.0
+    elif risk_score >= 60:
+        return 2.0
+    else:
+        return 1.0
+
+# =====================================================
 # Chandelier Levels
 # =====================================================
 
-def calculate_trade_levels(price, sma20, atr, trend_score, k_atr=1.5, rr_ratio=2.0):
+def calculate_trade_levels(price, sma20, atr, trend_score, leverage=1.0, k_atr=1.5, rr_ratio=2.0):
     """
     Determines entry, stop loss and take profit.
+    For leveraged trades, we increase the ATR multiplier to avoid premature stops.
     """
+    # Adjust ATR multiplier for leverage
+    # Simple rule: add 0.5 per leverage unit beyond 1.0
+    effective_k = k_atr + (max(0, leverage - 1) * 0.5)
+
     # Entry Logic
-    if trend_score > 70: # Increased threshold for momentum entry
+    if trend_score > 70:
         entry_price = price
     else:
         entry_price = sma20
 
     # Stop Loss (Initial distance)
-    # We use a slightly tighter ATR for entry, but chandelier trails later
-    stop_level = entry_price - (k_atr * atr)
+    stop_level = entry_price - (effective_k * atr)
 
     # Take Profit
     risk_distance = entry_price - stop_level
@@ -96,7 +118,7 @@ def calculate_trade_levels(price, sma20, atr, trend_score, k_atr=1.5, rr_ratio=2
 # Main Signal Function
 # =====================================================
 
-def generate_signal(df, k_atr=1.5, rr_ratio=2.0):
+def generate_signal(df, k_atr=1.5, rr_ratio=2.0, leverage_mode=False):
     df = add_indicators(df)
     latest = df.iloc[-1]
 
@@ -104,6 +126,10 @@ def generate_signal(df, k_atr=1.5, rr_ratio=2.0):
         return None
 
     trend_score, risk_score, final_score = calculate_scores(latest)
+
+    recommended_leverage = 1.0
+    if leverage_mode:
+        recommended_leverage = recommend_leverage(risk_score)
 
     # Improved Signal Logic
     signal = "HOLD"
@@ -117,6 +143,7 @@ def generate_signal(df, k_atr=1.5, rr_ratio=2.0):
         float(latest["SMA20"]),
         float(latest["ATR"]),
         trend_score,
+        leverage=recommended_leverage,
         k_atr=k_atr,
         rr_ratio=rr_ratio
     )
@@ -131,6 +158,8 @@ def generate_signal(df, k_atr=1.5, rr_ratio=2.0):
         reasons.append(f"Trend Score ({trend_score}) ist stark.")
     if latest["RSI"] > 50:
         reasons.append(f"Momentum ist positiv (RSI: {latest['RSI']:.1f}).")
+    if recommended_leverage > 1.0:
+        reasons.append(f"Empfohlener Hebel: {recommended_leverage}x (basierend auf Risiko-Score {risk_score}).")
 
     reason_text = " ".join(reasons)
 
@@ -143,5 +172,6 @@ def generate_signal(df, k_atr=1.5, rr_ratio=2.0):
         "stop_level": float(stop_level),
         "take_profit": float(take_profit),
         "latest_price": float(latest["Close"]),
+        "leverage": recommended_leverage,
         "reason": reason_text
     }
