@@ -211,7 +211,13 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.round(2).style.apply(style_signals, axis=1),
+            display_df.style.apply(style_signals, axis=1).format({
+                "Latest Price": "{:.2f}",
+                "Entry Price": "{:.2f}",
+                "Stop Level": "{:.2f}",
+                "Take Profit": "{:.2f}",
+                "Investment (€)": "{:.2f}"
+            }),
             use_container_width=True,
             hide_index=True
         )
@@ -275,8 +281,59 @@ if page in ["Test", "Live"]:
     mode = "TEST" if page == "Test" else "LIVE"
     st.header("🧪 Test Portfolio" if mode == "TEST" else "💰 Live Portfolio")
 
-    # REAL TIME MONITORING FOR OPEN TRADES
+    # CAPITAL AND SUMMARY
+    capital = get_capital(mode) or 2000
     open_trades_df = get_open_trades(mode)
+    closed_trades_df = get_closed_trades(mode)
+
+    invested = 0
+    if not open_trades_df.empty:
+        invested = open_trades_df["position_value"].sum()
+
+    cash = max(capital - invested, 0)
+
+    # 🔹 Visuals
+    col_v1, col_v2 = st.columns([1, 2])
+
+    with col_v1:
+        # Bar chart: Invested vs. Cash
+        fig_bar = go.Figure()
+        fig_bar.add_trace(go.Bar(name="Investiert", x=["Kapital"], y=[invested]))
+        fig_bar.add_trace(go.Bar(name="Uninvestiert", x=["Kapital"], y=[cash]))
+        fig_bar.update_layout(barmode="stack", title="Kapitalverteilung", height=350, template="plotly_white")
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    with col_v2:
+        # Total Profit Large Numbers
+        total_profit_abs = 0
+        if not closed_trades_df.empty:
+            total_profit_abs = closed_trades_df["profit"].sum()
+
+        profit_pct = (total_profit_abs / capital * 100) if capital > 0 else 0
+        color = "green" if total_profit_abs >= 0 else "red"
+
+        st.markdown(f"""
+        <div style="text-align: center; border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
+            <p style="font-size: 20px; margin-bottom: 5px;">Gesamtprofit</p>
+            <p style="font-size: 40px; font-weight: bold; color: {color}; margin: 0;">€ {total_profit_abs:,.2f}</p>
+            <p style="font-size: 24px; color: {color}; margin: 0;">({profit_pct:,.2f}%)</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Line chart: Equity Curve
+        if not closed_trades_df.empty:
+            # Simple equity curve based on closed trades
+            closed_trades_df = closed_trades_df.sort_values("timestamp")
+            equity_curve = [capital - total_profit_abs] # Start value
+            for p in closed_trades_df["profit"]:
+                equity_curve.append(equity_curve[-1] + p)
+
+            fig_line = go.Figure()
+            fig_line.add_trace(go.Scatter(y=equity_curve, mode='lines+markers', name="Portfolio Wert"))
+            fig_line.update_layout(title="Kapitalentwicklung (Abgeschlossene Trades)", height=250, template="plotly_white")
+            st.plotly_chart(fig_line, use_container_width=True)
+
+    # REAL TIME MONITORING FOR OPEN TRADES
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
@@ -284,32 +341,35 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                # Fetch data since trade or last 3 months
+                # Fetch company name (cached)
+                @st.cache_data(ttl=86400)
+                def get_company_name(t):
+                    try: return yf.Ticker(t).info.get("longName", t)
+                    except: return t
+
+                comp_name = get_company_name(ticker)
+
+                # Fetch price data
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
-                    # Just to be safe, fetch a bit earlier than trade
                     start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
                 data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
                 if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-
-                # Indicators
                 data = add_indicators(data)
 
-                # Highest price since trade timestamp
                 if trade["timestamp"]:
                     trade_time = pd.Timestamp(trade["timestamp"])
                     data_since_trade = data[data.index >= trade_time]
                     if data_since_trade.empty: data_since_trade = data.tail(1)
                     highest_price = data_since_trade["High"].max()
                 else:
-                    highest_price = data["High"].tail(10).max() # fallback
+                    highest_price = data["High"].tail(10).max()
 
                 latest = data.iloc[-1]
                 price = float(latest["Close"])
                 atr = float(latest["ATR"])
 
-                # Chandelier logic: trailing stop from highest price
                 chandelier_stop = highest_price - (1.5 * atr)
                 actual_stop = max(trade["stop"], chandelier_stop)
                 tp_level = trade["take_profit"]
@@ -318,13 +378,14 @@ if page in ["Test", "Live"]:
                 row_color = ""
                 if price <= actual_stop:
                     action = "SELL (STOP)"
-                    row_color = 'background-color: #f8d7da; color: #721c24' # Red
+                    row_color = 'background-color: #f8d7da; color: #721c24'
                 elif price >= tp_level:
                     action = "SELL (TP)"
-                    row_color = 'background-color: #d4edda; color: #155724' # Green
+                    row_color = 'background-color: #d4edda; color: #155724'
 
                 monitored_data.append({
                     "id": trade["id"],
+                    "Company": comp_name,
                     "Ticker": ticker,
                     "Price": price,
                     "Entry": trade["entry"],
@@ -339,16 +400,17 @@ if page in ["Test", "Live"]:
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
-
-            # Identify columns to display (exclude internal _color)
             display_cols = [c for c in mon_df.columns if c != "_color"]
-
-            def style_mon(row):
-                color = row["_color"]
-                return [color] * len(row)
+            def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1),
+                mon_df.style.apply(style_mon, axis=1).format({
+                    "Price": "{:.2f}",
+                    "Entry": "{:.2f}",
+                    "Profit (%)": "{:.2f}",
+                    "Stop (Current)": "{:.2f}",
+                    "Take Profit": "{:.2f}"
+                }),
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -356,16 +418,21 @@ if page in ["Test", "Live"]:
 
     # PORTFOLIO MANAGEMENT
     st.divider()
-    capital = get_capital(mode) or 2000
-    st.subheader(f"📂 Trades (Budget: € {capital:,.2f})")
-
+    st.subheader(f"📂 Trades")
     view_mode = st.radio("Ansicht", ["Offene Trades", "Abgeschlossene Trades"], key=f"{mode}_view", horizontal=True)
-    df_trades = open_trades_df if view_mode == "Offene Trades" else get_closed_trades(mode)
+    df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
         st.info("Keine Trades vorhanden.")
     else:
-        st.dataframe(df_trades, use_container_width=True)
+        # Formatting all numbers to 2 decimal places except id
+        num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
+        if "id" in num_cols: num_cols.remove("id")
+
+        st.dataframe(
+            df_trades.style.format({col: "{:.2f}" for col in num_cols}),
+            use_container_width=True
+        )
 
         # ACTIONS
         st.subheader("🛠 Aktionen")
