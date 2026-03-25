@@ -235,7 +235,26 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.round(2),
+            display_df,
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="€ %.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="€ %.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="€ %.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="€ %.2f"),
+                "Trend Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Trendstärke relativ zum SMA20."
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Stabilität basierend auf ATR (höher = weniger volatil)."
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Gewichteter Score (60% Trend, 40% Risiko)."
+                ),
+                "Investment (€)": st.column_config.NumberColumn(format="€ %.2f")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -505,11 +524,11 @@ if page in ["Test", "Live"]:
     profit_percent = (total_profit / capital * 100) if capital > 0 else 0
     color = "green" if total_profit >= 0 else "red"
 
-    st.markdown(f"""
-    ### Gesamtprofit:
-    **<span style='color:{color}'>€ {total_profit:,.2f}</span>**  
-    **({profit_percent:,.2f} %)**
-    """, unsafe_allow_html=True)
+    st.metric(
+        label="Gesamtprofit",
+        value=f"€ {total_profit:,.2f}",
+        delta=f"{profit_percent:,.2f} %"
+    )
 
     # =====================================================
     # 🔹 Trade Ansicht Umschalten
