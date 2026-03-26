@@ -33,7 +33,7 @@ init_db("LIVE", 2000)
 # Page Setup
 # =====================================================
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Pro Trader | Quant Signals", page_icon="📈", layout="wide")
 st.title("📊 Professional Trading System")
 
 # =====================================================
@@ -148,6 +148,8 @@ if page == "Signals":
             progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
+        progress_bar.empty()
+        status_text.empty()
 
         if results:
             df = pd.DataFrame(results)
@@ -225,6 +227,14 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.Column(help="Trend strength relative to SMA20/50/200 (higher = stronger uptrend)."),
+                "Risk Score": st.column_config.Column(help="Stability score based on ATR volatility (higher = lower volatility/risk)."),
+                "Final Score": st.column_config.Column(help="Weighted combination: 60% Trend Score + 40% Risk Score."),
+                "Stop Level": st.column_config.Column(help="Initial stop loss level calculated using ATR and leverage."),
+                "Take Profit": st.column_config.Column(help="Target level based on a 2.0 risk-reward ratio."),
+                "Investment (€)": st.column_config.Column(help="Recommended capital allocation for this position.")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -422,6 +432,10 @@ if page in ["Test", "Live"]:
                     "Take Profit": "{:.2f}",
                     "Leverage": "{:.1f}x"
                 }),
+                column_config={
+                    "Stop": st.column_config.Column(help="Chandelier trailing stop: dynamically follows price based on highest peak and ATR."),
+                    "Action": st.column_config.Column(help="Trading advice: HOLD, SELL (Stop/TP reached), or LIQUIDATION (margin call risk).")
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
