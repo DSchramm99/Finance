@@ -13,10 +13,12 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    # Added timeout to prevent application hangs
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Wrap HTML response in StringIO to avoid FutureWarning from pandas
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
