@@ -225,6 +225,19 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Company": st.column_config.TextColumn("Company", help="Name of the company"),
+                "Signal": st.column_config.TextColumn("Signal", help="Trading signal (BUY or HOLD)"),
+                "Leverage": st.column_config.NumberColumn("Leverage", help="Multiplier applied to the position size"),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", help="Most recent closing price in EUR"),
+                "Entry Price": st.column_config.NumberColumn("Entry Price", help="Recommended price to enter the trade"),
+                "Stop Level": st.column_config.NumberColumn("Stop Level", help="Price level to exit and limit losses"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", help="Target price level to realize gains"),
+                "Trend Score": st.column_config.ProgressColumn("Trend Score", help="Measures the strength of the current uptrend", min_value=0, max_value=100, format="%d"),
+                "Risk Score": st.column_config.ProgressColumn("Risk Score", help="Measures stability (lower volatility = higher score)", min_value=0, max_value=100, format="%d"),
+                "Final Score": st.column_config.ProgressColumn("Final Score", help="Weighted average of Trend and Risk scores", min_value=0, max_value=100, format="%d"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", help="Calculated position size based on risk and capital")
+            },
             use_container_width=True,
             hide_index=True
         )
