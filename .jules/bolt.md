@@ -1,0 +1,3 @@
+## 2026-03-27 - [Parallelized I/O-bound operations in Streamlit]
+**Learning:** Parallelizing ticker analysis and metadata fetching using `ThreadPoolExecutor` in Streamlit requires passing the `ScriptRunContext` to worker threads. `add_script_run_ctx` must be applied to the `threading.current_thread()` object *inside* the worker function to enable Streamlit-specific features like `@st.cache_data` and session state access. Calling it on a `Future` object is incorrect and will result in missing context warnings and broken caching.
+**Action:** Always use a wrapper function or decorator that retrieves the context with `get_script_run_ctx()` from the main thread and applies it with `add_script_run_ctx(threading.current_thread(), ctx)` inside the worker thread.
