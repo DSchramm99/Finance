@@ -1,0 +1,4 @@
+## 2025-05-15 - [DoS Prevention via Request Timeouts]
+**Vulnerability:** Lack of timeouts in network requests (`yfinance.download` and `requests.get`) can lead to application-level Denial of Service (DoS). If an external service hangs or responds very slowly, the Streamlit app threads will remain blocked, eventually exhausting the server's resources.
+**Learning:** External API calls are unpredictable. Even popular libraries like `yfinance` can hang indefinitely if the underlying network connection stalls without an explicit timeout parameter.
+**Prevention:** Always specify a `timeout` parameter (e.g., `timeout=10`) for all network-bound operations. Additionally, when parsing external HTML with `pandas.read_html`, wrap the content in `io.StringIO` to avoid `FutureWarning` and ensure compatibility with newer pandas versions.

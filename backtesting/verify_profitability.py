@@ -57,7 +57,7 @@ def verify_profitability():
     for ticker in selected_stocks:
         print(f"Backtesting {ticker}...          ", end="\r")
         try:
-            data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+            data = yf.download(ticker, period=period, auto_adjust=True, progress=False, timeout=10)
             if data.empty:
                 continue
 
