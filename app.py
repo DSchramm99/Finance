@@ -217,14 +217,20 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Company": st.column_config.TextColumn("Company", help="Name der Aktie"),
+                "Signal": st.column_config.TextColumn("Signal", help="Handelsempfehlung: BUY oder HOLD"),
+                "Leverage": st.column_config.NumberColumn("Leverage", help="Empfohlener Hebel basierend auf Volatilität", format="%.1fx"),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", help="Aktueller Kurs", format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn("Entry Price", help="Ziel-Einstiegspreis", format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn("Stop Level", help="Preislimit zur Verlustbegrenzung", format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", help="Zielpreis zur Gewinnmitnahme", format="%.2f"),
+                "Trend Score": st.column_config.ProgressColumn("Trend Score", help="Stärke des Aufwärtstrends (0-100)", format="%d", min_value=0, max_value=100),
+                "Risk Score": st.column_config.ProgressColumn("Risk Score", help="Stabilität des Kurses (0-100). Höhere Werte bedeuten geringeres Risiko", format="%d", min_value=0, max_value=100),
+                "Final Score": st.column_config.NumberColumn("Final Score", help="Gesamtbewertung (60% Trend, 40% Risiko)", format="%d"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", help="Empfohlenes Kapital für diesen Trade", format="€%.2f")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +276,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie das Portfolio, in dem der Trade gespeichert werden soll. TEST für Simulation, LIVE für echtes Trading.")
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Aktie gekauft wurde oder werden soll.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Das Gesamtkapital, das in diesen Trade investiert wird.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Anfallende Transaktionskosten beim Kauf.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Der Multiplikator für Gewinne und Verluste. Ein höherer Hebel erhöht das Risiko einer Liquidation.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:

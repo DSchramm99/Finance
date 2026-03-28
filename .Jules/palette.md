@@ -1,0 +1,3 @@
+## 2025-05-15 - [Enhanced DataFrame Visualization with Progress Bars]
+**Learning:** Using `st.column_config.ProgressColumn` for numerical scores (0-100) provides an immediate visual density of "strength" or "risk" that is much faster to parse than raw numbers in a table. Tooltips via the `help` parameter in `column_config` are essential for explaining complex financial metrics (like Trend vs. Risk scores) without cluttering the UI.
+**Action:** Always prefer `ProgressColumn` for bounded metrics and use `NumberColumn` with explicit `format` strings (e.g., `%.2f`, `€%.2f`) to ensure consistent precision and units in financial dataframes.
