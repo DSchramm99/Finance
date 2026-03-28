@@ -27,7 +27,8 @@ def evaluate_split(
             ticker,
             start=start_date,
             auto_adjust=True,
-            progress=False
+            progress=False,
+            timeout=10
         ).dropna()
 
         if isinstance(data.columns, pd.MultiIndex):

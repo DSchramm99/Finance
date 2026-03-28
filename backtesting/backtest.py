@@ -36,7 +36,8 @@ def run_backtest(ticker, start_capital=2000):
         ticker,
         period="2y",
         auto_adjust=True,
-        progress=False
+        progress=False,
+        timeout=10
     )
 
     if data.empty:
