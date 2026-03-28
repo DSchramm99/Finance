@@ -16,7 +16,9 @@ def load_wikipedia_table(url):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Wrap the response text in StringIO to satisfy the latest pandas requirements
+    # and avoid the FutureWarning regarding literal HTML strings.
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
