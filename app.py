@@ -217,14 +217,44 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score",
+                    help="Score showing the strength of the uptrend (0-100)",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    help="Score showing the stability of the stock (higher is more stable)",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    help="Combined score used for ranking (0-100)",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Leverage": st.column_config.NumberColumn(
+                    "Leverage",
+                    help="Recommended leverage based on risk profile",
+                    format="%.1fx"
+                ),
+                "Investment (€)": st.column_config.NumberColumn(
+                    "Investment (€)",
+                    help="Calculated position size based on risk management rules",
+                    format="%.2f €"
+                )
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -280,6 +310,7 @@ if page == "Signals":
             if submit:
                 add_trade(db_mode, selected_row["ticker"], entry_price, selected_row["stop_level"], selected_row["take_profit"], position_value, fees, leverage)
                 st.success("Trade gespeichert!")
+                st.toast("Trade erfolgreich bestätigt! 🚀")
 
 # =====================================================
 # 🧪 / 💰 PORTFOLIO (Unified)
@@ -414,14 +445,27 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f"),
+                    "Stop": st.column_config.NumberColumn(
+                        "Stop",
+                        help="Dynamic trailing Chandelier stop or initial stop level",
+                        format="%.2f"
+                    ),
+                    "Take Profit": st.column_config.NumberColumn(
+                        "Take Profit",
+                        help="Calculated price target based on ATR-based risk-reward ratio",
+                        format="%.2f"
+                    ),
+                    "Profit (%)": st.column_config.NumberColumn(
+                        "Profit (%)",
+                        help="Current unrealized profit or loss in percent, including leverage",
+                        format="%.2f%%"
+                    ),
+                    "Leverage": st.column_config.NumberColumn(format="%.1fx")
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
