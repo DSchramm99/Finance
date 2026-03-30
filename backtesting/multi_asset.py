@@ -29,7 +29,7 @@ def optimize_global_parameters(
 
             for ticker in tickers:
 
-                data = yf.download(ticker, start=start_date, auto_adjust=True)
+                data = yf.download(ticker, start=start_date, auto_adjust=True, timeout=10)
 
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
@@ -82,7 +82,7 @@ def run_global_backtest(
 
     for ticker in tickers:
 
-        data = yf.download(ticker, start=start_date, auto_adjust=True)
+        data = yf.download(ticker, start=start_date, auto_adjust=True, timeout=10)
         data = data.dropna()
 
         train, test = train_test_split(data, train_end_date)

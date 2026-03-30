@@ -1,0 +1,4 @@
+## 2025-05-15 - Enforcing Network Timeouts and Safe Metadata Fetching
+**Vulnerability:** Application hangs and resource exhaustion (Potential DoS) due to missing timeouts on network-bound requests (`yfinance.download`, `requests.get`, and `yfinance.Ticker.info`).
+**Learning:** `yfinance`'s `Ticker.info` property does not consistently support timeouts and can be a major source of application hangs. `yf.download` supports a `timeout` parameter, but metadata fetching requires a different approach.
+**Prevention:** Enforce a mandatory 10-second timeout on all `yf.download` and `requests.get` calls. For company name retrieval, use a direct request to the Yahoo Finance search API (`https://query2.finance.yahoo.com/v1/finance/search`) with a `timeout=10` parameter. Always ensure `requests` and `io.StringIO` are correctly imported when refactoring network or parsing logic.

@@ -18,10 +18,17 @@ def add_indicators(df):
     return df
 
 
+import requests
+
 def get_company_name(ticker):
     try:
-        info = yf.Ticker(ticker).info
-        return info.get("longName", ticker)
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("longname", ticker)
+        return ticker
     except:
         return ticker
 
@@ -40,7 +47,8 @@ def generate_recommendations(tickers):
                 ticker,
                 period="1y",
                 auto_adjust=True,
-                progress=False
+                progress=False,
+                timeout=10
             )
 
             if data.empty:
