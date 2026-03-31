@@ -217,14 +217,18 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn("Preis", format="%.2f €", help="Aktueller Kurs"),
+                "Entry Price": st.column_config.NumberColumn("Einstieg", format="%.2f €", help="Empfohlener Kaufkurs"),
+                "Stop Level": st.column_config.NumberColumn("Stop", format="%.2f €", help="Stop-Loss (Chandelier Trailing)"),
+                "Take Profit": st.column_config.NumberColumn("Ziel", format="%.2f €", help="Take-Profit Ziel (ATR-basiert)"),
+                "Trend Score": st.column_config.ProgressColumn("Trend", min_value=0, max_value=100, format="%d", help="Trend-Stärke (0-100)"),
+                "Risk Score": st.column_config.ProgressColumn("Stabilität", min_value=0, max_value=100, format="%d", help="Geringe Volatilität (0-100)"),
+                "Final Score": st.column_config.ProgressColumn("Gesamt", min_value=0, max_value=100, format="%d", help="Kombinierte Bewertung"),
+                "Investment (€)": st.column_config.NumberColumn("Investition", format="%.2f €", help="Empfohlene Positionsgröße"),
+                "Leverage": st.column_config.NumberColumn("Hebel", format="%.1fx", help="Vorgeschlagener Hebelfaktor")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -414,14 +418,15 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn("Kurs", format="%.2f €"),
+                    "Entry": st.column_config.NumberColumn("Einstieg", format="%.2f €"),
+                    "Profit (%)": st.column_config.NumberColumn("Profit", format="%.2f%%", help="Aktueller Gewinn/Verlust inkl. Hebel"),
+                    "Stop": st.column_config.NumberColumn("Stop", format="%.2f €", help="Aktueller Trailing-Stop"),
+                    "Take Profit": st.column_config.NumberColumn("Ziel", format="%.2f €"),
+                    "Leverage": st.column_config.NumberColumn("Hebel", format="%.1fx")
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -440,8 +445,20 @@ if page in ["Test", "Live"]:
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
-            df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            df_trades.style.format({col: "{:.2f}" for col in num_cols if col not in ["leverage"]}),
+            column_config={
+                "entry": st.column_config.NumberColumn("Einstieg", format="%.2f €"),
+                "stop": st.column_config.NumberColumn("Stop", format="%.2f €"),
+                "take_profit": st.column_config.NumberColumn("Ziel", format="%.2f €"),
+                "exit_price": st.column_config.NumberColumn("Exit", format="%.2f €"),
+                "position_value": st.column_config.NumberColumn("Größe", format="%.2f €"),
+                "fees": st.column_config.NumberColumn("Gebühren", format="%.2f €"),
+                "profit": st.column_config.NumberColumn("Profit", format="%.2f €"),
+                "leverage": st.column_config.NumberColumn("Hebel", format="%.1fx"),
+                "timestamp": st.column_config.DatetimeColumn("Zeitpunkt")
+            },
+            use_container_width=True,
+            hide_index=True
         )
 
         st.subheader("🛠 Aktionen")
