@@ -40,7 +40,8 @@ def generate_recommendations(tickers):
                 ticker,
                 period="1y",
                 auto_adjust=True,
-                progress=False
+                progress=False,
+                timeout=10
             )
 
             if data.empty:
