@@ -1,6 +1,28 @@
 import pandas as pd
 import requests
+import streamlit as st
 from io import StringIO
+
+
+# =====================================================
+# Metadata Helper
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Fetches company name using Yahoo Finance Search API (faster than Ticker.info).
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        response = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            quote = data["quotes"][0]
+            return quote.get("shortname") or quote.get("longname") or ticker
+        return ticker
+    except:
+        return ticker
 
 
 # =====================================================
