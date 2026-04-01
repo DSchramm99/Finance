@@ -1,0 +1,25 @@
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.0.2:8501
+  External URL: http://34.134.215.5:8501
+
+2026-04-01 01:10:56.458 Thread 'ThreadPoolExecutor-2_0': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-04-01 01:10:56.460 Thread 'ThreadPoolExecutor-2_1': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-04-01 01:10:56.466 Thread 'ThreadPoolExecutor-2_2': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-04-01 01:10:56.470 Thread 'ThreadPoolExecutor-2_3': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-04-01 01:10:56.473 Thread 'ThreadPoolExecutor-2_4': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-04-01 01:10:58.410 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-04-01 01:10:58.699 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.

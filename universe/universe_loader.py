@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import streamlit as st
 from io import StringIO
 
 
@@ -185,3 +186,26 @@ def get_index_universe(index_name):
 
     else:
         raise ValueError(f"Unknown index: {index_name}")
+
+
+# =====================================================
+# Optimized Metadata Retrieval
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Retrieves the company name using the Yahoo Finance Search API.
+    This is faster than yf.Ticker(ticker).info and avoids heavy objects.
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get('quotes'):
+            return data['quotes'][0].get('longname', ticker)
+    except Exception:
+        pass
+    return ticker
