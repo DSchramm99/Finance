@@ -204,27 +204,31 @@ if page == "Signals":
         ]
 
         display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
+            "company_name": "Unternehmen",
             "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
-            "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "leverage": "Hebel",
+            "latest_price": "Kurs",
+            "entry_price": "Einstieg",
+            "stop_level": "Stop",
+            "take_profit": "Ziel",
+            "trend_score": "Trend-Score",
+            "risk_score": "Risiko-Score",
+            "final_score": "Gesamt-Score"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Kurs": st.column_config.NumberColumn("Kurs", format="%.2f", help="Aktueller Marktpreis"),
+                "Einstieg": st.column_config.NumberColumn("Einstieg", format="%.2f", help="Empfohlener Einstiegspreis"),
+                "Stop": st.column_config.NumberColumn("Stop", format="%.2f", help="Verlustbegrenzung (Stop Loss)"),
+                "Ziel": st.column_config.NumberColumn("Ziel", format="%.2f", help="Gewinnziel (Take Profit)"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", format="%.2f", help="Empfohlene Positionsgröße"),
+                "Hebel": st.column_config.NumberColumn("Hebel", format="%.1fx", help="Empfohlener Hebelfaktor"),
+                "Trend-Score": st.column_config.ProgressColumn("Trend-Score", min_value=0, max_value=100, help="Stärke des Aufwärtstrends"),
+                "Risiko-Score": st.column_config.ProgressColumn("Risiko-Score", min_value=0, max_value=100, help="Stabilität / Geringes Risiko"),
+                "Gesamt-Score": st.column_config.ProgressColumn("Gesamt-Score", min_value=0, max_value=100, help="Gesamtbewertung der Chance")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +274,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie zwischen dem Test-Portfolio (simuliert) und dem Live-Portfolio.")
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Aktie gekauft wird.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Gesamtwert der Position in Euro.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Transaktionsgebühren der Bank oder des Brokers.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Multiplikator für Kursgewinne und -verluste (Hebel).")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -413,16 +417,29 @@ if page in ["Test", "Live"]:
             display_cols = [c for c in mon_df.columns if c != "_color"]
             def style_mon(row): return [row["_color"]] * len(row)
 
+            mon_df = mon_df.rename(columns={
+                "Company": "Unternehmen",
+                "Price": "Kurs",
+                "Entry": "Einstieg",
+                "Profit (%)": "Profit (%)",
+                "Stop": "Stop",
+                "Take Profit": "Ziel",
+                "Leverage": "Hebel",
+                "Action": "Aktion"
+            })
+            display_cols_de = [c for c in mon_df.columns if c != "_color"]
+
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
-                column_order=display_cols,
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Kurs": st.column_config.NumberColumn("Kurs", format="%.2f", help="Aktueller Kurs"),
+                    "Einstieg": st.column_config.NumberColumn("Einstieg", format="%.2f", help="Kaufkurs"),
+                    "Profit (%)": st.column_config.NumberColumn("Profit (%)", format="%.2f%%", help="Prozentualer Gewinn/Verlust inkl. Hebel"),
+                    "Stop": st.column_config.NumberColumn("Stop", format="%.2f", help="Höherer Wert aus initialem Stop und Chandelier Trailing Stop"),
+                    "Ziel": st.column_config.NumberColumn("Ziel", format="%.2f", help="Zielkurs"),
+                    "Hebel": st.column_config.NumberColumn("Hebel", format="%.1fx", help="Eingesetzter Hebelfaktor")
+                },
+                column_order=display_cols_de,
                 use_container_width=True,
                 hide_index=True
             )
