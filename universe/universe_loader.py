@@ -1,5 +1,7 @@
+import streamlit as st
 import pandas as pd
 import requests
+import os
 from io import StringIO
 
 
@@ -16,7 +18,7 @@ def load_wikipedia_table(url):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
@@ -157,6 +159,32 @@ def load_universe():
         pass
 
     return list(set([t for t in universe if isinstance(t, str)]))
+
+
+# =====================================================
+# Optimized Metadata Retrieval (NEW)
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Retrieves the company name for a ticker using the Yahoo Finance Search API.
+    Uses a 10s timeout and is cached for 24 hours.
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("quotes"):
+            for quote in data["quotes"]:
+                if quote.get("symbol") == ticker:
+                    return quote.get("longname") or quote.get("shortname") or ticker
+        return ticker
+    except Exception:
+        return ticker
 
 
 # =====================================================

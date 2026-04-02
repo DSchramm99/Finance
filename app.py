@@ -5,8 +5,9 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
-from universe.universe_loader import get_index_universe
+from universe.universe_loader import get_index_universe, get_company_name
 from database.db_manager import (
     init_db,
     get_capital,
@@ -141,11 +142,27 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        def worker(t):
+            import threading
+            add_script_run_ctx(threading.current_thread())
+            return analyze_ticker(t, is_leveraged)
+
+        # Performance Optimization: Parallel ticker analysis using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_ticker = {executor.submit(worker, ticker): ticker for ticker in tickers}
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(f"Analysiere: {ticker} ({i+1}/{len(tickers)})")
+
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    st.error(f"Fehler bei {ticker}: {e}")
+
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
@@ -173,13 +190,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Efficient company name lookup using centralized helper
+        results["company_name"] = results["ticker"].apply(get_company_name)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,11 +357,7 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
+                # Optimized name retrieval from centralized metadata helper
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
