@@ -13,7 +13,7 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
     tables = pd.read_html(response.text)
@@ -162,6 +162,34 @@ def load_universe():
 # =====================================================
 # Index Selector
 # =====================================================
+
+# =====================================================
+# Metadata Helpers (Centralized)
+# =====================================================
+
+import urllib.parse
+from functools import lru_cache
+
+@lru_cache(maxsize=1000)
+def get_company_name(ticker):
+    """
+    Retrieves company name using the Yahoo Finance search API.
+    Avoids yf.Ticker(ticker).info which is slow and buggy.
+    Uses lru_cache for in-memory caching across threads.
+    """
+    try:
+        encoded_ticker = urllib.parse.quote(str(ticker))
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={encoded_ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("quotes"):
+            quote = data["quotes"][0]
+            return quote.get("longname") or quote.get("shortname") or ticker
+    except Exception:
+        pass
+    return ticker
 
 def get_index_universe(index_name):
 
