@@ -185,46 +185,42 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row["Signal"] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
         display_cols = [
-            "company_name",
-            "signal",
-            "leverage",
-            "latest_price",
-            "entry_price",
-            "stop_level",
-            "take_profit",
-            "trend_score",
-            "risk_score",
-            "final_score",
-            "Investment (€)"
+            "company_name", "signal", "leverage", "latest_price", "entry_price",
+            "stop_level", "take_profit", "trend_score", "risk_score", "final_score", "Investment (€)"
         ]
 
         display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
+            "company_name": "Unternehmen",
             "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
-            "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "leverage": "Hebel",
+            "latest_price": "Kurs",
+            "entry_price": "Einstieg",
+            "stop_level": "Stop",
+            "take_profit": "Ziel",
+            "trend_score": "Trend",
+            "risk_score": "Stabilität",
+            "final_score": "Gesamt",
+            "Investment (€)": "Investition (€)"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Trend": st.column_config.ProgressColumn("Trend", help="Abstand zum SMA20", min_value=0, max_value=100, format="%d"),
+                "Stabilität": st.column_config.ProgressColumn("Stabilität", help="Volatilitäts-basierter Score (ATR)", min_value=0, max_value=100, format="%d"),
+                "Gesamt": st.column_config.ProgressColumn("Gesamt", help="Kombinierter Score (60% Trend, 40% Stabilität)", min_value=0, max_value=100, format="%d"),
+                "Kurs": st.column_config.NumberColumn("Kurs", format="%.2f €"),
+                "Einstieg": st.column_config.NumberColumn("Einstieg", format="%.2f €"),
+                "Stop": st.column_config.NumberColumn("Stop", help="ATR-basierter Stop-Loss", format="%.2f €"),
+                "Ziel": st.column_config.NumberColumn("Ziel", format="%.2f €"),
+                "Investition (€)": st.column_config.NumberColumn("Investition (€)", format="%.2f €"),
+                "Hebel": st.column_config.NumberColumn("Hebel", format="%.1fx")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -394,15 +390,15 @@ if page in ["Test", "Live"]:
 
                 monitored_data.append({
                     "id": trade["id"],
-                    "Company": comp_name,
+                    "Unternehmen": comp_name,
                     "Ticker": ticker,
-                    "Price": price,
-                    "Entry": trade["entry"],
+                    "Kurs": price,
+                    "Einstieg": trade["entry"],
                     "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
                     "Stop": actual_stop,
-                    "Take Profit": tp_level,
-                    "Leverage": leverage,
-                    "Action": action,
+                    "Ziel": tp_level,
+                    "Hebel": leverage,
+                    "Empfehlung": action,
                     "_color": row_color
                 })
             except Exception as e:
@@ -410,19 +406,23 @@ if page in ["Test", "Live"]:
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
-            display_cols = [c for c in mon_df.columns if c != "_color"]
+            display_cols_mon = [
+                "Unternehmen", "Ticker", "Kurs", "Einstieg", "Profit (%)",
+                "Stop", "Ziel", "Hebel", "Empfehlung"
+            ]
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
-                column_order=display_cols,
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Kurs": st.column_config.NumberColumn("Kurs", format="%.2f €"),
+                    "Einstieg": st.column_config.NumberColumn("Einstieg", format="%.2f €"),
+                    "Stop": st.column_config.NumberColumn("Stop", format="%.2f €"),
+                    "Ziel": st.column_config.NumberColumn("Ziel", format="%.2f €"),
+                    "Profit (%)": st.column_config.NumberColumn("Profit (%)", format="%.2f %%"),
+                    "Hebel": st.column_config.NumberColumn("Hebel", format="%.1fx"),
+                },
+                column_order=display_cols_mon,
                 use_container_width=True,
                 hide_index=True
             )
