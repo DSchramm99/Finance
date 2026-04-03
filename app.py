@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import threading
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -136,18 +138,37 @@ if page == "Signals":
     # =====================================================
 
     if st.sidebar.button("🚀 Generate Top 5 Signals"):
+        import time
+        start_time = time.time()
         tickers = get_index_universe(index_choice)
         progress_bar = st.progress(0)
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Optimization: Parallel execution using ThreadPoolExecutor
+        def worker(ticker, lev_mode):
+            # Ensure Streamlit context is available in the background thread
+            add_script_run_ctx(threading.current_thread())
+            return analyze_ticker(ticker, lev_mode)
 
-        status_text.text("Fertig ✅")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {executor.submit(worker, t, is_leveraged): t for t in tickers}
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker_name = future_to_ticker[future]
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                # Update UI in the main thread
+                status_text.text(f"Analysiert: {ticker_name} ({i+1}/{len(tickers)})")
+                progress_bar.progress((i + 1) / len(tickers))
+
+        end_time = time.time()
+        status_text.text(f"Fertig ✅ (Dauer: {end_time - start_time:.2f}s)")
 
         if results:
             df = pd.DataFrame(results)
