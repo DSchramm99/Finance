@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from universe.universe_loader import get_index_universe
+from universe.universe_loader import get_index_universe, get_company_name
 from database.db_manager import (
     init_db,
     get_capital,
@@ -93,11 +93,13 @@ if page == "Signals":
 
     @st.cache_data(ttl=3600)
     def load_price_data(ticker):
+        # Security: timeout=10 to prevent hangs
         data = yf.download(
             ticker,
             period="2y",
             auto_adjust=True,
-            progress=False
+            progress=False,
+            timeout=10
         )
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
@@ -173,13 +175,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Centralized and safe metadata retrieval
+        results["company_name"] = results["ticker"].apply(get_company_name)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,18 +342,15 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
+                # Use centralized and safe metadata retrieval
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
                     start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
-                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+                # Security: timeout=10
+                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False, timeout=10)
                 if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
                 data = add_indicators(data)
 
@@ -405,8 +399,9 @@ if page in ["Test", "Live"]:
                     "Action": action,
                     "_color": row_color
                 })
-            except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+            except Exception:
+                # Security: Fail securely by not leaking internal stack traces or technical errors
+                st.error(f"Ein Fehler ist bei der Aktualisierung von {ticker} aufgetreten.")
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)

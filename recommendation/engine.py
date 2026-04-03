@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from universe.universe_loader import get_company_name
 
 
 def add_indicators(df):
@@ -18,14 +19,6 @@ def add_indicators(df):
     return df
 
 
-def get_company_name(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return info.get("longName", ticker)
-    except:
-        return ticker
-
-
 def generate_recommendations(tickers):
 
     k = 1.5
@@ -36,11 +29,13 @@ def generate_recommendations(tickers):
     for ticker in tickers:
 
         try:
+            # Security: timeout=10 to prevent hangs
             data = yf.download(
                 ticker,
                 period="1y",
                 auto_adjust=True,
-                progress=False
+                progress=False,
+                timeout=10
             )
 
             if data.empty:

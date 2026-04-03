@@ -1,6 +1,41 @@
 import pandas as pd
 import requests
 from io import StringIO
+import urllib.parse
+import streamlit as st
+
+
+# =====================================================
+# Meta Data: Company Name
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Safe retrieval of company name from Yahoo Finance Search API.
+    Uses a mandatory 10s timeout and input sanitization.
+    """
+    try:
+        # Sanitize ticker to prevent injection or malformed URLs
+        sanitized_ticker = urllib.parse.quote(str(ticker))
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={sanitized_ticker}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            # Prefer longname, fallback to ticker
+            return data["quotes"][0].get("longname", ticker)
+
+        return ticker
+    except Exception:
+        # Fail secure: return the ticker instead of crashing or leaking info
+        return ticker
 
 
 # =====================================================
@@ -13,10 +48,12 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    # Security: timeout=10 to prevent hangs and DoS risks
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Wrap the HTML in StringIO to avoid FutureWarnings and parsing issues with some pandas versions
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
