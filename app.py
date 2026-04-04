@@ -225,6 +225,11 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100),
+                "Risk Score": st.column_config.ProgressColumn(min_value=0, max_value=100),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100),
+            },
             use_container_width=True,
             hide_index=True
         )
