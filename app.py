@@ -5,6 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -130,6 +131,11 @@ if page == "Signals":
             }
         except: return None
 
+    def worker_analyze(ticker, lev_mode, ctx):
+        if ctx:
+            add_script_run_ctx(ctx)
+        return analyze_ticker(ticker, lev_mode)
+
 
     # =====================================================
     # Generate Signals
@@ -141,11 +147,26 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        ctx = get_script_run_ctx()
+
+        # Parallelized ticker analysis
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {
+                executor.submit(worker_analyze, ticker, is_leveraged, ctx): ticker
+                for ticker in tickers
+            }
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(f"Analysiere: {ticker} ({i+1}/{len(tickers)})")
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    st.error(f"Error analyzing {ticker}: {e}")
+
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
