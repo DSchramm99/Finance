@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import threading
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -141,13 +143,31 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # ⚡ Bolt: Parallel analysis wrapper to enable Streamlit context in threads
+        ctx = get_script_run_ctx()
 
-        status_text.text("Fertig ✅")
+        def worker(ticker, lev_mode, context):
+            add_script_run_ctx(threading.current_thread(), context)
+            return analyze_ticker(ticker, lev_mode)
+
+        start_time = datetime.now()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {executor.submit(worker, t, is_leveraged, ctx): t for t in tickers}
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception:
+                    pass
+
+                progress_bar.progress((i + 1) / len(tickers))
+                status_text.text(f"Analysiert: {ticker} ({i+1}/{len(tickers)})")
+
+        duration = (datetime.now() - start_time).total_seconds()
+        status_text.text(f"Fertig ✅ (Dauer: {duration:.1f}s)")
 
         if results:
             df = pd.DataFrame(results)
