@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -204,27 +204,44 @@ if page == "Signals":
         ]
 
         display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
+            "company_name": "Unternehmen",
             "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
-            "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "leverage": "Hebel",
+            "latest_price": "Preis",
+            "entry_price": "Einstieg",
+            "stop_level": "Stop",
+            "take_profit": "Ziel",
+            "trend_score": "Trend",
+            "risk_score": "Stabilität",
+            "final_score": "Gesamt"
         })
 
         st.dataframe(
             display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
+                "Preis": "{:.2f}",
+                "Einstieg": "{:.2f}",
+                "Stop": "{:.2f}",
+                "Ziel": "{:.2f}",
                 "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
+                "Hebel": "{:.1f}x"
             }),
+            column_config={
+                "Trend": st.column_config.ProgressColumn(
+                    "Trend", help="Trend-Stärke basierend auf SMA20", min_value=0, max_value=100
+                ),
+                "Stabilität": st.column_config.ProgressColumn(
+                    "Stabilität", help="Inverses Risiko basierend auf ATR-Volatilität", min_value=0, max_value=100
+                ),
+                "Gesamt": st.column_config.ProgressColumn(
+                    "Gesamt", help="Gewichtete Kombination aus Trend und Stabilität", min_value=0, max_value=100
+                ),
+                "Hebel": st.column_config.NumberColumn(
+                    "Hebel", help="Empfohlener Hebel basierend auf Stabilität"
+                ),
+                "Stop": st.column_config.NumberColumn(
+                    "Stop", help="Initialer ATR-basierter Stop-Loss"
+                )
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -271,15 +288,15 @@ if page == "Signals":
 
         with st.form("trade_form"):
             db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der aktuelle Marktpreis oder Ihr gewünschter Einstiegskurs.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Der Gesamtbetrag, den Sie in diesen Trade investieren möchten.")
             fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Multiplikator für Gewinn/Verlust. Höherer Hebel erhöht das Liquidationsrisiko.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
                 add_trade(db_mode, selected_row["ticker"], entry_price, selected_row["stop_level"], selected_row["take_profit"], position_value, fees, leverage)
-                st.success("Trade gespeichert!")
+                st.success("Trade erfolgreich bestätigt! 🚀")
 
 # =====================================================
 # 🧪 / 💰 PORTFOLIO (Unified)
@@ -394,15 +411,15 @@ if page in ["Test", "Live"]:
 
                 monitored_data.append({
                     "id": trade["id"],
-                    "Company": comp_name,
+                    "Unternehmen": comp_name,
                     "Ticker": ticker,
-                    "Price": price,
-                    "Entry": trade["entry"],
+                    "Preis": price,
+                    "Einstieg": trade["entry"],
                     "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
                     "Stop": actual_stop,
-                    "Take Profit": tp_level,
-                    "Leverage": leverage,
-                    "Action": action,
+                    "Ziel": tp_level,
+                    "Hebel": leverage,
+                    "Aktion": action,
                     "_color": row_color
                 })
             except Exception as e:
@@ -413,16 +430,25 @@ if page in ["Test", "Live"]:
             display_cols = [c for c in mon_df.columns if c != "_color"]
             def style_mon(row): return [row["_color"]] * len(row)
 
+            display_cols_mon = [c for c in mon_df.columns if c != "_color"]
             st.dataframe(
                 mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
+                    "Preis": "{:.2f}",
+                    "Einstieg": "{:.2f}",
                     "Profit (%)": "{:.2f}%",
                     "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
+                    "Ziel": "{:.2f}",
+                    "Hebel": "{:.1f}x"
                 }),
-                column_order=display_cols,
+                column_config={
+                    "Profit (%)": st.column_config.NumberColumn(
+                        "Profit (%)", help="Hebeleffekt ist in der Berechnung berücksichtigt."
+                    ),
+                    "Stop": st.column_config.NumberColumn(
+                        "Stop", help="Aktueller Trailing-Stop (Chandelier Exit)."
+                    )
+                },
+                column_order=display_cols_mon,
                 use_container_width=True,
                 hide_index=True
             )
@@ -458,7 +484,7 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Dieser Trade wird unwiderruflich aus der Datenbank gelöscht."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
