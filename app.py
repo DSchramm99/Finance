@@ -5,8 +5,10 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
-from universe.universe_loader import get_index_universe
+from universe.universe_loader import get_index_universe, get_company_name
 from database.db_manager import (
     init_db,
     get_capital,
@@ -108,7 +110,9 @@ if page == "Signals":
     # Ticker Analyse
     # =====================================================
 
-    def analyze_ticker(ticker, lev_mode):
+    def analyze_ticker(ticker, lev_mode, context=None):
+        if context:
+            add_script_run_ctx(threading.current_thread(), context)
         try:
             data = load_price_data(ticker)
             if data.empty: return None
@@ -141,13 +145,24 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Start timer for performance measurement
+        start_time = datetime.now()
 
-        status_text.text("Fertig ✅")
+        # Context for Streamlit features in threads
+        ctx = get_script_run_ctx()
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(analyze_ticker, t, is_leveraged, ctx) for t in tickers]
+
+            for i, future in enumerate(as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
+                progress_bar.progress((i + 1) / len(tickers))
+                status_text.text(f"Analysiere: {i+1}/{len(tickers)}")
+
+        duration = (datetime.now() - start_time).total_seconds()
+        status_text.text(f"Fertig ✅ (Dauer: {duration:.1f}s)")
 
         if results:
             df = pd.DataFrame(results)
@@ -173,13 +188,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Use centralized and cached name retrieval
+        results["company_name"] = results["ticker"].apply(get_company_name)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,11 +355,6 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
