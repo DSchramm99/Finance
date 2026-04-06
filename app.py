@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if "BUY" in str(row["Signal"]):
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -203,6 +203,7 @@ if page == "Signals":
             "Investment (€)"
         ]
 
+        results["signal"] = results["signal"].map({"BUY": "BUY 🚀", "HOLD": "HOLD ⏳"}).fillna(results["signal"])
         display_df = results[display_cols].rename(columns={
             "company_name": "Company",
             "signal": "Signal",
@@ -225,6 +226,11 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d%%"),
+                "Risk Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d%%"),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d%%"),
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -458,14 +464,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Vorsicht: Diese Aktion kann nicht rückgängig gemacht werden."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="Löscht alle Trades unwiderruflich aus der Datenbank."):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()

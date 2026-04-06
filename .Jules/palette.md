@@ -1,0 +1,3 @@
+## 2025-01-24 - Visualizing Technical Scores & Scannability
+**Learning:** In technical trading interfaces, raw numbers for scores (0-100) are high-friction for quick decision-making. `st.column_config.ProgressColumn` provides an immediate visual heuristic for signal strength. Additionally, when modifying signal strings to include emojis (e.g., "BUY 🚀"), styling functions must be updated to use substring matching to prevent broken highlighting logic.
+**Action:** Always use `st.column_config.ProgressColumn` for bounded percentage/score metrics and ensure styler functions handle string modifications via `in` operators or regex.
