@@ -1,6 +1,8 @@
 import pandas as pd
 import requests
 from io import StringIO
+import streamlit as st
+import urllib.parse
 
 
 # =====================================================
@@ -13,12 +15,36 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
+
+
+# =====================================================
+# Company Name Loader (Security Enhanced)
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Retrieves company name using Yahoo Finance Search API.
+    Uses sanitized ticker and enforced 10s timeout.
+    """
+    try:
+        sanitized_ticker = urllib.parse.quote(ticker)
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={sanitized_ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("longname", ticker)
+    except Exception:
+        pass
+    return ticker
 
 
 # =====================================================
