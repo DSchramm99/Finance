@@ -1,0 +1,3 @@
+## 2026-04-06 - Parallel ticker analysis in Streamlit
+**Learning:** Parallelizing I/O-bound tasks (like `yfinance` downloads) in Streamlit requires manually passing the script run context to worker threads using `get_script_run_ctx()` and applying it inside the worker using `add_script_run_ctx(threading.current_thread(), ctx)`. Calling `add_script_run_ctx` on the `Future` object itself is incorrect and won't propagate the context to the worker thread's execution.
+**Action:** Always capture `ctx = get_script_run_ctx()` in the main thread, and use a wrapper function in the worker that calls `add_script_run_ctx(threading.current_thread(), ctx)` before executing the actual task.

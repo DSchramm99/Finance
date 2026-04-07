@@ -5,6 +5,9 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+import threading
+from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -108,6 +111,11 @@ if page == "Signals":
     # Ticker Analyse
     # =====================================================
 
+    def analyze_ticker_with_ctx(ticker, lev_mode, ctx):
+        if ctx:
+            add_script_run_ctx(threading.current_thread(), ctx)
+        return analyze_ticker(ticker, lev_mode)
+
     def analyze_ticker(ticker, lev_mode):
         try:
             data = load_price_data(ticker)
@@ -140,14 +148,31 @@ if page == "Signals":
         progress_bar = st.progress(0)
         status_text = st.empty()
         results = []
+        start_time = time.perf_counter()
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Get the context of the main thread to use in workers
+        ctx = get_script_run_ctx()
 
-        status_text.text("Fertig ✅")
+        # Parallelize ticker analysis with 5 workers for speed and rate-limit stability
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for ticker in tickers:
+                # Use a wrapper to apply the main thread's context to the worker thread
+                future = executor.submit(analyze_ticker_with_ctx, ticker, is_leveraged, ctx)
+                futures.append(future)
+
+            for i, future in enumerate(as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
+
+                # Update progress and status text in real-time
+                progress_bar.progress((i + 1) / len(tickers))
+                ticker_name = results[-1]["ticker"] if result else "..."
+                status_text.text(f"Analysiere: {ticker_name} ({i+1}/{len(tickers)})")
+
+        duration = time.perf_counter() - start_time
+        status_text.text(f"Fertig ✅ (Dauer: {duration:.2f}s)")
 
         if results:
             df = pd.DataFrame(results)
