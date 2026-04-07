@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -225,6 +225,29 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score",
+                    help="Trendstärke basierend auf dem Abstand zum SMA20 (0-100).",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    help="Sicherheitsbewertung basierend auf der Volatilität (höher = stabiler, 0-100).",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    help="Gewichtete Gesamtbewertung aus 60% Trend und 40% Risiko (0-100).",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -271,10 +294,25 @@ if page == "Signals":
 
         with st.form("trade_form"):
             db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
+            entry_price = st.number_input(
+                "Kaufkurs",
+                value=round(float(selected_row["latest_price"]), 2),
+                help="Der Preis, zu dem die Aktie gekauft wurde oder werden soll."
+            )
+            position_value = st.number_input(
+                "Positionsgröße (€)",
+                value=float(selected_row["Investment (€)"]),
+                help="Der Gesamtwert der Position inklusive Hebel."
+            )
             fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            leverage = st.number_input(
+                "Hebel (Leverage)",
+                value=float(selected_row["leverage"]),
+                min_value=1.0,
+                max_value=10.0,
+                step=0.1,
+                help="Der Hebelmultiplikator für diese Position (1.0 = kein Hebel)."
+            )
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -458,14 +496,22 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button(
+                "🗑 Delete Single Trade",
+                key=f"{mode}_delete_btn",
+                help="Löscht diesen Trade dauerhaft aus der Datenbank. Dies kann nicht rückgängig gemacht werden!"
+            ):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button(
+            "🔥 RESET ENTIRE TEST DATABASE",
+            use_container_width=True,
+            help="Vorsicht! Dies löscht alle Trades und setzt das Kapital der Test-Datenbank zurück."
+        ):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
