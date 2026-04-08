@@ -116,6 +116,10 @@ if page == "Signals":
             signal_data = generate_signal(data, leverage_mode=lev_mode)
             if signal_data is None: return None
 
+            sig = signal_data["signal"]
+            if sig == "BUY": sig = "BUY 🚀"
+            elif sig == "HOLD": sig = "HOLD ⏳"
+
             return {
                 "ticker": ticker,
                 "latest_price": signal_data["latest_price"],
@@ -125,7 +129,7 @@ if page == "Signals":
                 "trend_score": signal_data["trend_score"],
                 "risk_score": signal_data["risk_score"],
                 "final_score": signal_data["final_score"],
-                "signal": signal_data["signal"],
+                "signal": sig,
                 "leverage": signal_data["leverage"]
             }
         except: return None
@@ -135,7 +139,7 @@ if page == "Signals":
     # Generate Signals
     # =====================================================
 
-    if st.sidebar.button("🚀 Generate Top 5 Signals"):
+    if st.sidebar.button("🚀 Generate Top 5 Signals", help="Analyzes all stocks in the selected index and finds the top 5 opportunities."):
         tickers = get_index_universe(index_choice)
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -185,7 +189,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if "BUY" in str(row["Signal"]):
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -225,6 +229,29 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score",
+                    help="Relative position to SMA20 (0-100)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d"
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    help="Volatility score based on ATR (0-100)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d"
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    help="Combined score from Trend (60%) and Risk (40%)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d"
+                )
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -271,10 +298,10 @@ if page == "Signals":
 
         with st.form("trade_form"):
             db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="The price at which the stock was or should be bought.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="The total amount invested in this trade.")
             fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="The leverage for this trade (1.0 = no leverage).")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -458,14 +485,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Irreversibly deletes this trade from the database."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="⚠️ WARNING: Deletes all trades and resets starting capital. This cannot be undone!"):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
