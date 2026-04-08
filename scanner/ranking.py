@@ -11,7 +11,7 @@ def scan_universe(universe, k=1.5):
     for ticker in universe:
 
         try:
-            df = yf.download(ticker, period="6mo", auto_adjust=True)
+            df = yf.download(ticker, period="6mo", auto_adjust=True, timeout=10)
 
             if df.empty:
                 continue
