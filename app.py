@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import threading
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -141,11 +143,26 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Optimization: Parallelize ticker analysis to speed up index scanning.
+        # max_workers=5 is chosen to balance speed and API rate-limiting.
+        ctx = get_script_run_ctx()
+
+        def analyze_with_context(ticker, lev_mode):
+            add_script_run_ctx(threading.current_thread(), ctx)
+            return analyze_ticker(ticker, lev_mode)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(analyze_with_context, ticker, is_leveraged) for ticker in tickers]
+
+            for i, future in enumerate(as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
+
+                # Update progress
+                progress = (i + 1) / len(tickers)
+                progress_bar.progress(progress)
+                status_text.text(f"Analysiere: {i+1}/{len(tickers)}")
 
         status_text.text("Fertig ✅")
 
