@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
 from io import StringIO
+from urllib.parse import quote
 
 
 # =====================================================
@@ -13,12 +14,43 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
     tables = pd.read_html(response.text)
 
     return tables
+
+
+# =====================================================
+# Safe Metadata Loader (Yahoo Finance Search API)
+# =====================================================
+
+def get_company_name(ticker):
+    """
+    Retrieves the company name for a given ticker using the Yahoo Finance Search API.
+    Includes a 10s timeout and input sanitization to prevent DoS and malformed requests.
+    """
+    if not ticker or not isinstance(ticker, str):
+        return ticker
+
+    sanitized_ticker = quote(ticker)
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={sanitized_ticker}"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("longname") or data["quotes"][0].get("shortname") or ticker
+    except Exception:
+        pass
+
+    return ticker
 
 
 # =====================================================

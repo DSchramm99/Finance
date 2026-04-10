@@ -1,0 +1,4 @@
+## 2024-04-10 - Secure Metadata Retrieval and DoS Prevention
+**Vulnerability:** Potential Denial of Service (DoS) due to missing timeouts in network requests (yfinance and Wikipedia scraping) and potential malformed requests/limited availability when using `yf.Ticker(ticker).info`.
+**Learning:** `yf.Ticker(ticker).info` is notoriously slow and unreliable, often causing hangs. Transitioning to the Yahoo Finance Search API (`query2.finance.yahoo.com/v1/finance/search`) provides a more robust and faster alternative for company name resolution.
+**Prevention:** Always enforce a mandatory timeout (e.g., 10s) for all network requests. Sanitize ticker inputs using `urllib.parse.quote` before embedding them in URLs. In Streamlit applications, wrap network-bound utility functions with `@st.cache_data` to ensure performance and prevent redundant API calls.
