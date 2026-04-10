@@ -1,0 +1,3 @@
+## 2025-05-15 - Parallelizing Yahoo Finance Requests in Streamlit
+**Learning:** Parallelizing `yf.download` using `ThreadPoolExecutor` significantly boosts performance for multi-ticker analysis (~6.7x speedup for TecDAX). However, Streamlit functions like `st.cache_data` require explicit attachment of the main thread's context to the background threads via `add_script_run_ctx`. Additionally, switching from `yf.Ticker.info` to the lightweight Yahoo Finance Search API drastically reduces metadata retrieval latency.
+**Action:** Always use `ThreadPoolExecutor` for network-bound ticker loops in Streamlit and ensure `script_run_ctx` is passed to workers. Prefer direct Search API calls for company metadata over the heavy `Ticker.info` object.
