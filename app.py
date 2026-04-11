@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
+import urllib.parse
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -97,11 +99,30 @@ if page == "Signals":
             ticker,
             period="2y",
             auto_adjust=True,
-            progress=False
+            progress=False,
+            timeout=10
         )
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
         return data
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Retrieves company name using Yahoo Finance Search API with timeout.
+    """
+    try:
+        quoted_ticker = urllib.parse.quote(ticker)
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={quoted_ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("longname") or data["quotes"][0].get("shortname") or ticker
+    except Exception:
+        pass
+    return ticker
 
 
     # =====================================================
@@ -173,13 +194,7 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        results["company_name"] = results["ticker"].map(get_company_name)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,18 +360,13 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
                     start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
-                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False, timeout=10)
                 if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
                 data = add_indicators(data)
 
@@ -405,8 +415,8 @@ if page in ["Test", "Live"]:
                     "Action": action,
                     "_color": row_color
                 })
-            except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+            except Exception:
+                st.error(f"Error updating {ticker}. Please try again later.")
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
