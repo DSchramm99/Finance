@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if 'BUY' in str(row['Signal']):
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -207,7 +207,7 @@ if page == "Signals":
             "company_name": "Company",
             "signal": "Signal",
             "leverage": "Leverage",
-            "latest_price": "Latest Price",
+            "latest_price": "Price",
             "entry_price": "Entry Price",
             "stop_level": "Stop Level",
             "take_profit": "Take Profit",
@@ -218,13 +218,21 @@ if page == "Signals":
 
         st.dataframe(
             display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
+                "Price": "{:.2f}",
                 "Entry Price": "{:.2f}",
                 "Stop Level": "{:.2f}",
                 "Take Profit": "{:.2f}",
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn("Trend", help="Trend strength based on SMA20", min_value=0, max_value=100, format="%d"),
+                "Risk Score": st.column_config.ProgressColumn("Risk", help="Volatility-based score (higher = lower volatility)", min_value=0, max_value=100, format="%d"),
+                "Final Score": st.column_config.ProgressColumn("Score", help="Combined score: Trend (60%) + Risk (40%)", min_value=0, max_value=100, format="%d"),
+                "Stop Level": st.column_config.NumberColumn("Stop", help="ATR-based initial stop loss level"),
+                "Take Profit": st.column_config.NumberColumn("Target", help="Target price (Risk-Reward Ratio 2:1)"),
+                "Signal": st.column_config.TextColumn("Signal", help="Trading recommendation from the scoring model")
+            },
             use_container_width=True,
             hide_index=True
         )
