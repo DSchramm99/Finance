@@ -3,8 +3,11 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import time
+import threading
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -28,6 +31,58 @@ from strategy.signal_engine import generate_signal, add_indicators
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
+
+# =====================================================
+# ⚡ Bolt: Global Helpers for Parallel Execution
+# =====================================================
+
+@st.cache_data(ttl=3600)
+def load_price_data(ticker):
+    # Enforce timeout=10 as per global pattern
+    data = yf.download(
+        ticker,
+        period="2y",
+        auto_adjust=True,
+        progress=False,
+        timeout=10
+    )
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    return data
+
+def analyze_ticker(ticker, lev_mode):
+    try:
+        data = load_price_data(ticker)
+        if data.empty: return None
+
+        signal_data = generate_signal(data, leverage_mode=lev_mode)
+        if signal_data is None: return None
+
+        return {
+            "ticker": ticker,
+            "latest_price": signal_data["latest_price"],
+            "entry_price": signal_data["entry_price"],
+            "stop_level": signal_data["stop_level"],
+            "take_profit": signal_data["take_profit"],
+            "trend_score": signal_data["trend_score"],
+            "risk_score": signal_data["risk_score"],
+            "final_score": signal_data["final_score"],
+            "signal": signal_data["signal"],
+            "leverage": signal_data["leverage"]
+        }
+    except: return None
+
+def analyze_ticker_parallel(ticker, lev_mode, ctx):
+    """Wrapper to inject Streamlit context into worker threads."""
+    add_script_run_ctx(threading.current_thread(), ctx)
+    return analyze_ticker(ticker, lev_mode)
+
+@st.cache_data(ttl=86400)
+def get_company_name(t):
+    try:
+        return yf.Ticker(t).info.get("longName", t)
+    except:
+        return t
 
 # =====================================================
 # Page Setup
@@ -88,50 +143,6 @@ if page == "Signals":
     is_leveraged = leverage_mode == "Gehebelt"
 
     # =====================================================
-    # Cached Price Data
-    # =====================================================
-
-    @st.cache_data(ttl=3600)
-    def load_price_data(ticker):
-        data = yf.download(
-            ticker,
-            period="2y",
-            auto_adjust=True,
-            progress=False
-        )
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-        return data
-
-
-    # =====================================================
-    # Ticker Analyse
-    # =====================================================
-
-    def analyze_ticker(ticker, lev_mode):
-        try:
-            data = load_price_data(ticker)
-            if data.empty: return None
-
-            signal_data = generate_signal(data, leverage_mode=lev_mode)
-            if signal_data is None: return None
-
-            return {
-                "ticker": ticker,
-                "latest_price": signal_data["latest_price"],
-                "entry_price": signal_data["entry_price"],
-                "stop_level": signal_data["stop_level"],
-                "take_profit": signal_data["take_profit"],
-                "trend_score": signal_data["trend_score"],
-                "risk_score": signal_data["risk_score"],
-                "final_score": signal_data["final_score"],
-                "signal": signal_data["signal"],
-                "leverage": signal_data["leverage"]
-            }
-        except: return None
-
-
-    # =====================================================
     # Generate Signals
     # =====================================================
 
@@ -141,13 +152,25 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # ⚡ Bolt: Parallel execution to speed up ticker analysis
+        start_time = time.perf_counter()
+        ctx = get_script_run_ctx()
 
-        status_text.text("Fertig ✅")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(analyze_ticker_parallel, ticker, is_leveraged, ctx) for ticker in tickers]
+
+            for i, future in enumerate(as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
+
+                # Update progress
+                progress = (i + 1) / len(tickers)
+                progress_bar.progress(progress)
+                status_text.text(f"Analysiere: {i+1}/{len(tickers)}")
+
+        end_time = time.perf_counter()
+        status_text.text(f"Fertig ✅ (Dauer: {end_time - start_time:.1f}s)")
 
         if results:
             df = pd.DataFrame(results)
@@ -341,22 +364,19 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
-        monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+        def monitor_trade(trade):
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
-                    start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
+                    # Defensive check for timestamp string
+                    ts = trade["timestamp"]
+                    if isinstance(ts, str):
+                        start_date = (datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
-                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False, timeout=10)
                 if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
                 data = add_indicators(data)
 
@@ -392,7 +412,7 @@ if page in ["Test", "Live"]:
                     action = "SELL (TP)"
                     row_color = 'background-color: #d4edda; color: #155724'
 
-                monitored_data.append({
+                return {
                     "id": trade["id"],
                     "Company": comp_name,
                     "Ticker": ticker,
@@ -404,9 +424,26 @@ if page in ["Test", "Live"]:
                     "Leverage": leverage,
                     "Action": action,
                     "_color": row_color
-                })
+                }
             except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+                return f"Error updating {ticker}: {e}"
+
+        def monitor_trade_parallel(trade, ctx):
+            add_script_run_ctx(threading.current_thread(), ctx)
+            return monitor_trade(trade)
+
+        # ⚡ Bolt: Parallelize monitoring loop while preserving trade order
+        monitored_data = []
+        ctx = get_script_run_ctx()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Map futures to preserve original order
+            futures = [executor.submit(monitor_trade_parallel, trade, ctx) for _, trade in open_trades_df.iterrows()]
+            for future in futures:
+                res = future.result()
+                if isinstance(res, dict):
+                    monitored_data.append(res)
+                elif isinstance(res, str):
+                    st.error(res)
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
