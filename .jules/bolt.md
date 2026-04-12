@@ -1,0 +1,3 @@
+## 2025-05-15 - [Parallelizing Streamlit UI Loops]
+**Learning:** Sequential network requests in Streamlit UI loops (like ticker analysis or portfolio monitoring) are a major bottleneck. Using `ThreadPoolExecutor` can speed up these operations by 3-5x. However, worker threads must capture and apply the main thread's Streamlit context using `get_script_run_ctx` and `add_script_run_ctx` to ensure `@st.cache_data` and UI updates work correctly. Also, for monitoring dashboards, iterating over the list of futures instead of using `as_completed` maintains deterministic row ordering.
+**Action:** Always use `ThreadPoolExecutor` for network-bound loops in Streamlit and ensure proper context propagation and result ordering.
