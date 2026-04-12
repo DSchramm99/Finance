@@ -116,6 +116,14 @@ if page == "Signals":
             signal_data = generate_signal(data, leverage_mode=lev_mode)
             if signal_data is None: return None
 
+            # Add emojis to signals for better UX
+            raw_signal = signal_data["signal"]
+            emoji_signal = raw_signal
+            if raw_signal == "BUY":
+                emoji_signal = "BUY 🚀"
+            elif raw_signal == "HOLD":
+                emoji_signal = "HOLD ⚖️"
+
             return {
                 "ticker": ticker,
                 "latest_price": signal_data["latest_price"],
@@ -125,7 +133,7 @@ if page == "Signals":
                 "trend_score": signal_data["trend_score"],
                 "risk_score": signal_data["risk_score"],
                 "final_score": signal_data["final_score"],
-                "signal": signal_data["signal"],
+                "signal": emoji_signal,
                 "leverage": signal_data["leverage"]
             }
         except: return None
@@ -185,7 +193,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if "BUY" in str(row.Signal):
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -226,7 +234,18 @@ if page == "Signals":
                 "Leverage": "{:.1f}x"
             }),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score", min_value=0, max_value=100, format="%d"
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score", min_value=0, max_value=100, format="%d"
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score", min_value=0, max_value=100, format="%d"
+                ),
+            }
         )
 
         # =====================================================
@@ -271,10 +290,10 @@ if page == "Signals":
 
         with st.form("trade_form"):
             db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Position eröffnet wird.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Der Gesamtbetrag, der in diesen Trade investiert wird.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Anfallende Transaktionsgebühren beim Kauf.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Multiplikator für Gewinn und Verlust.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -316,15 +335,12 @@ if page in ["Test", "Live"]:
             total_profit_abs = closed_trades_df["profit"].sum()
 
         profit_pct = (total_profit_abs / capital * 100) if capital > 0 else 0
-        color = "green" if total_profit_abs >= 0 else "red"
 
-        st.markdown(f"""
-        <div style="text-align: center; border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
-            <p style="font-size: 20px; margin-bottom: 5px;">Gesamtprofit</p>
-            <p style="font-size: 40px; font-weight: bold; color: {color}; margin: 0;">€ {total_profit_abs:,.2f}</p>
-            <p style="font-size: 24px; color: {color}; margin: 0;">({profit_pct:,.2f}%)</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric(
+            label="Gesamtprofit",
+            value=f"€ {total_profit_abs:,.2f}",
+            delta=f"{profit_pct:,.2f}%"
+        )
 
         if not closed_trades_df.empty:
             closed_trades_df = closed_trades_df.sort_values("timestamp")
@@ -458,14 +474,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Löscht diesen Trade unwiderruflich aus der Datenbank."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="Achtung: Dies löscht ALLE Trades und setzt das Kapital zurück. Dies kann nicht rückgängig gemacht werden."):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
