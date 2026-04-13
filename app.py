@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
+import urllib.parse
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,6 +27,29 @@ from database.db_manager import (
 
 from strategy.position_manager import calculate_position_value
 from strategy.signal_engine import generate_signal, add_indicators
+
+# =====================================================
+# 🔹 Security: Metadata Retrieval (Yahoo Search API)
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name(ticker):
+    """
+    Fetches the company name using Yahoo Finance Search API.
+    Uses a 10s timeout and sanitizes input to prevent DoS/Hangs.
+    """
+    try:
+        query = urllib.parse.quote(ticker)
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("longname") or data["quotes"][0].get("shortname", ticker)
+    except Exception:
+        pass
+    return ticker
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
@@ -345,11 +370,6 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")

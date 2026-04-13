@@ -1,0 +1,4 @@
+## 2026-04-13 - [DoS Prevention & Input Sanitization]
+**Vulnerability:** Potential Denial of Service (DoS) due to missing timeouts in network requests and potential injection via unsanitized ticker inputs in URLs.
+**Learning:** The Yahoo Finance Search API (`https://query2.finance.yahoo.com/v1/finance/search`) is a much faster and more reliable alternative to `yf.Ticker(t).info` for metadata retrieval. However, it requires a mandatory `User-Agent` header to return valid JSON, and inputs must be sanitized using `urllib.parse.quote` to prevent malformed request errors or injection.
+**Prevention:** Always implement a mandatory 10-second timeout on all `requests.get` calls. Relocate metadata retrieval logic to the top-level scope to leverage `@st.cache_data` effectively and avoid redundant function definitions in loops.
