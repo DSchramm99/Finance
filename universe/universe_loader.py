@@ -13,12 +13,32 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    # Sentinel: Added 10s timeout to prevent DoS hangs
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Sentinel: Using StringIO to avoid lxml FileNotFoundError with direct string passing
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
+
+
+def get_company_name_safe(ticker):
+    """
+    Sentinel: Fetches company name using a direct Yahoo Finance Search API call
+    with a mandatory 10s timeout to prevent blocking/DoS.
+    """
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("longname", ticker)
+    except Exception:
+        pass
+    return ticker
 
 
 # =====================================================

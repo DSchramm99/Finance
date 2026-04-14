@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from universe.universe_loader import get_company_name_safe
 
 
 def add_indicators(df):
@@ -19,11 +20,8 @@ def add_indicators(df):
 
 
 def get_company_name(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return info.get("longName", ticker)
-    except:
-        return ticker
+    # Sentinel: Replaced blocking yf.Ticker.info with safe version
+    return get_company_name_safe(ticker)
 
 
 def generate_recommendations(tickers):
