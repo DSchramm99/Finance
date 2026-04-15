@@ -217,14 +217,18 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Risk Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Latest Price": st.column_config.NumberColumn(format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -458,14 +462,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="This action cannot be undone."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="All data in the test portfolio will be permanently deleted."):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
