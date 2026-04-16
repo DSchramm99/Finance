@@ -216,15 +216,26 @@ if page == "Signals":
             "final_score": "Final Score"
         })
 
+        # Emoji mapping for Signal
+        signal_map = {
+            "BUY": "BUY 🚀",
+            "HOLD": "HOLD 🟡"
+        }
+        display_df["Signal"] = display_df["Signal"].map(lambda x: signal_map.get(x, x))
+
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Risk Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +281,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie das Portfolio (Test oder Echtgeld).")
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Aktie gekauft wurde.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Der investierte Gesamtbetrag in Euro.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Die beim Kauf angefallenen Transaktionsgebühren.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Der gewählte Hebel für diesen Trade.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -410,18 +421,29 @@ if page in ["Test", "Live"]:
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
+
+            # Emoji mapping for Action
+            action_map = {
+                "HOLD": "HOLD 🟡",
+                "LIQUIDATION": "LIQUIDATION 🛑",
+                "SELL (STOP)": "SELL (STOP) 📉",
+                "SELL (TP)": "SELL (TP) 📈"
+            }
+            mon_df["Action"] = mon_df["Action"].map(lambda x: action_map.get(x, x))
+
             display_cols = [c for c in mon_df.columns if c != "_color"]
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f"),
+                    "Profit (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Stop": st.column_config.NumberColumn(format="%.2f"),
+                    "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                    "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -458,14 +480,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Löscht diesen Trade unwiderruflich aus der Datenbank."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="⚠️ Achtung: Löscht alle Trades und setzt das Kapital zurück. Dies kann nicht rückgängig gemacht werden!"):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
