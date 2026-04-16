@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from universe.universe_loader import get_index_universe
+from universe.universe_loader import get_index_universe, get_company_name_safe
 from database.db_manager import (
     init_db,
     get_capital,
@@ -175,10 +175,7 @@ if page == "Signals":
 
         company_names = {}
         for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
+            company_names[ticker] = get_company_name_safe(ticker)
         results["company_name"] = results["ticker"].map(company_names)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
@@ -347,8 +344,7 @@ if page in ["Test", "Live"]:
             try:
                 @st.cache_data(ttl=86400)
                 def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
+                    return get_company_name_safe(t)
 
                 comp_name = get_company_name(ticker)
 
@@ -405,8 +401,8 @@ if page in ["Test", "Live"]:
                     "Action": action,
                     "_color": row_color
                 })
-            except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+            except Exception:
+                st.error(f"Error updating {ticker}. Please try again later.")
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
