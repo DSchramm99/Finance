@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row.Signal == "✅ BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -216,15 +216,30 @@ if page == "Signals":
             "final_score": "Final Score"
         })
 
+        display_df["Signal"] = display_df["Signal"].map({"BUY": "✅ BUY", "HOLD": "⏳ HOLD"})
+
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Bewertung des kurzfristigen Momentums relativ zum 20-Tage-Durchschnitt."
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Bewertung der Stabilität basierend auf der Volatilität (ATR). Höher ist stabiler."
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d",
+                    help="Gewichteter Durchschnitt aus Trend (60%) und Risiko (40%)."
+                ),
+                "Latest Price": st.column_config.NumberColumn(format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f €")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +285,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie zwischen Test- und Live-Konto.")
+            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2), help="Der aktuelle Marktpreis oder Ihr gewünschter Einstiegspreis.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Der Gesamtbetrag in Euro, der für diesen Trade eingesetzt wird.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Transaktionsgebühren Ihres Brokers für die Eröffnung.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Der Multiplikator für die Position. Erhöht Gewinnchancen und Risiko gleichermaßen.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -458,14 +473,14 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn", help="Entfernt diesen Trade dauerhaft aus der Datenbank. Kann nicht rückgängig gemacht werden."):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="Löscht alle Trades und setzt das Startkapital im Test-Portfolio zurück. Diese Aktion ist endgültig."):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
