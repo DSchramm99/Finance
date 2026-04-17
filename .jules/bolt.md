@@ -1,0 +1,3 @@
+## 2025-04-16 - Streamlit Threading and Network I/O
+**Learning:** Parallelizing ticker analysis in Streamlit requires explicit context management using `get_script_run_ctx` and `add_script_run_ctx`. While `ThreadPoolExecutor` provides significant speedup for I/O-bound `yfinance` calls, the gain is non-linear and subject to network variability and provider rate-limiting. Bulk download (`yf.download([tickers])`) is even faster but prevents granular UI progress updates.
+**Action:** Use `ThreadPoolExecutor` with a conservative worker count (e.g., 5) and Streamlit context management for I/O-bound tasks where granular UI feedback is required.

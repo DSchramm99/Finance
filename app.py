@@ -5,6 +5,9 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
+from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -140,14 +143,32 @@ if page == "Signals":
         progress_bar = st.progress(0)
         status_text = st.empty()
         results = []
+        start_time = time.time()
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Context for parallel execution in Streamlit
+        ctx = get_script_run_ctx()
 
-        status_text.text("Fertig ✅")
+        def analyze_wrapper(t, lev):
+            add_script_run_ctx(threading.current_thread(), ctx)
+            return analyze_ticker(t, lev)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # We use a list of futures to maintain order later if needed,
+            # though results are sorted by final_score anyway.
+            futures = [executor.submit(analyze_wrapper, ticker, is_leveraged) for ticker in tickers]
+
+            for i, (ticker, future) in enumerate(zip(tickers, futures)):
+                status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    st.error(f"Error analyzing {ticker}: {e}")
+                progress_bar.progress((i + 1) / len(tickers))
+
+        duration = time.time() - start_time
+        status_text.text(f"Fertig ✅ (Dauer: {duration:.1f}s)")
 
         if results:
             df = pd.DataFrame(results)
@@ -341,72 +362,88 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
-        monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+        @st.cache_data(ttl=86400)
+        def get_company_name(t):
+            try: return yf.Ticker(t).info.get("longName", t)
+            except: return t
+
+        def process_trade(trade):
             ticker = trade["ticker"]
+            comp_name = get_company_name(ticker)
+
+            start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            if trade["timestamp"]:
+                start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
+
+            data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+            if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
+            data = add_indicators(data)
+
+            if trade["timestamp"]:
+                trade_time = pd.Timestamp(trade["timestamp"])
+                data_since_trade = data[data.index >= trade_time]
+                if data_since_trade.empty: data_since_trade = data.tail(1)
+                highest_price = data_since_trade["High"].max()
+            else:
+                highest_price = data["High"].tail(10).max()
+
+            latest = data.iloc[-1]
+            price = float(latest["Close"])
+            atr = float(latest["ATR"])
+            leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
+
+            # Chandelier trailing stop
+            effective_k = 1.5 + (max(0, leverage - 1) * 0.5)
+            chandelier_stop = highest_price - (effective_k * atr)
+            actual_stop = max(trade["stop"], chandelier_stop)
+            tp_level = trade["take_profit"]
+
+            action = "HOLD"
+            row_color = ""
+            # Check liquidation
+            if leverage > 1.0 and price <= trade["entry"] * (1 - (1.0 / leverage)):
+                action = "LIQUIDATION"
+                row_color = 'background-color: #f8d7da; color: #721c24'
+            elif price <= actual_stop:
+                action = "SELL (STOP)"
+                row_color = 'background-color: #f8d7da; color: #721c24'
+            elif price >= tp_level:
+                action = "SELL (TP)"
+                row_color = 'background-color: #d4edda; color: #155724'
+
+            return {
+                "id": trade["id"],
+                "Company": comp_name,
+                "Ticker": ticker,
+                "Price": price,
+                "Entry": trade["entry"],
+                "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
+                "Stop": actual_stop,
+                "Take Profit": tp_level,
+                "Leverage": leverage,
+                "Action": action,
+                "_color": row_color
+            }
+
+        monitored_data = []
+        ctx = get_script_run_ctx()
+
+        def process_trade_wrapper(t):
+            add_script_run_ctx(threading.current_thread(), ctx)
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
-
-                start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-                if trade["timestamp"]:
-                    start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
-
-                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
-                if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-                data = add_indicators(data)
-
-                if trade["timestamp"]:
-                    trade_time = pd.Timestamp(trade["timestamp"])
-                    data_since_trade = data[data.index >= trade_time]
-                    if data_since_trade.empty: data_since_trade = data.tail(1)
-                    highest_price = data_since_trade["High"].max()
-                else:
-                    highest_price = data["High"].tail(10).max()
-
-                latest = data.iloc[-1]
-                price = float(latest["Close"])
-                atr = float(latest["ATR"])
-                leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
-
-                # Chandelier trailing stop
-                effective_k = 1.5 + (max(0, leverage - 1) * 0.5)
-                chandelier_stop = highest_price - (effective_k * atr)
-                actual_stop = max(trade["stop"], chandelier_stop)
-                tp_level = trade["take_profit"]
-
-                action = "HOLD"
-                row_color = ""
-                # Check liquidation
-                if leverage > 1.0 and price <= trade["entry"] * (1 - (1.0 / leverage)):
-                    action = "LIQUIDATION"
-                    row_color = 'background-color: #f8d7da; color: #721c24'
-                elif price <= actual_stop:
-                    action = "SELL (STOP)"
-                    row_color = 'background-color: #f8d7da; color: #721c24'
-                elif price >= tp_level:
-                    action = "SELL (TP)"
-                    row_color = 'background-color: #d4edda; color: #155724'
-
-                monitored_data.append({
-                    "id": trade["id"],
-                    "Company": comp_name,
-                    "Ticker": ticker,
-                    "Price": price,
-                    "Entry": trade["entry"],
-                    "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
-                    "Stop": actual_stop,
-                    "Take Profit": tp_level,
-                    "Leverage": leverage,
-                    "Action": action,
-                    "_color": row_color
-                })
+                return process_trade(t)
             except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+                return e
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(process_trade_wrapper, trade) for _, trade in open_trades_df.iterrows()]
+            # Iterate in original order to maintain UI consistency
+            for future in futures:
+                result = future.result()
+                if isinstance(result, Exception):
+                    st.error(f"Error updating trade: {result}")
+                elif result:
+                    monitored_data.append(result)
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
