@@ -217,14 +217,18 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f €"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f €"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Risk Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +274,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie das Portfolio (Test für Simulation, Live für echtes Kapital).")
+            entry_price = st.number_input("Kaufkurs (€)", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Aktie gekauft wird.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Gesamtbetrag, der in diesen Trade investiert wird.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Transaktionskosten beim Kauf.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Multiplikator für Kursbewegungen (1.0 = kein Hebel).")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -414,14 +418,15 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f €"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f €"),
+                    "Stop": st.column_config.NumberColumn(format="%.2f €"),
+                    "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                    "Profit (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -451,14 +456,14 @@ if page in ["Test", "Live"]:
         with col1:
             if view_mode == "Offene Trades":
                 st.write("Trade schließen:")
-                exit_price = st.number_input("Exit Preis", key=f"{mode}_exit_val")
-                fee = st.number_input("Verkaufsgebühr", value=0.0, key=f"{mode}_fee_val")
-                if st.button("Close Trade", key=f"{mode}_close_btn_act"):
+                exit_price = st.number_input("Verkaufskurs (€)", key=f"{mode}_exit_val")
+                fee = st.number_input("Verkaufsgebühren (€)", value=0.0, key=f"{mode}_fee_val")
+                if st.button("Trade schließen", key=f"{mode}_close_btn_act"):
                     close_trade(mode, selected_id, exit_price, fee)
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Trade löschen", key=f"{mode}_delete_btn"):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
