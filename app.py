@@ -135,7 +135,7 @@ if page == "Signals":
     # Generate Signals
     # =====================================================
 
-    if st.sidebar.button("🚀 Generate Top 5 Signals"):
+    if st.sidebar.button("🚀 Generate Top 5 Signals", help="Analysiert alle Aktien des gewählten Index und findet die 5 besten Chancen basierend auf Trend und Risiko."):
         tickers = get_index_universe(index_choice)
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -203,7 +203,9 @@ if page == "Signals":
             "Investment (€)"
         ]
 
-        display_df = results[display_cols].rename(columns={
+        display_df = results[display_cols].copy()
+        display_df["risk_score"] = 100 - display_df["risk_score"]
+        display_df = display_df.rename(columns={
             "company_name": "Company",
             "signal": "Signal",
             "leverage": "Leverage",
@@ -211,20 +213,24 @@ if page == "Signals":
             "entry_price": "Entry Price",
             "stop_level": "Stop Level",
             "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "trend_score": "Trend",
+            "risk_score": "Risk",
+            "final_score": "Score"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f €"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f €"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                "Trend": st.column_config.ProgressColumn(min_value=0, max_value=100),
+                "Risk": st.column_config.ProgressColumn(min_value=0, max_value=100),
+                "Score": st.column_config.ProgressColumn(min_value=0, max_value=100),
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -270,11 +276,11 @@ if page == "Signals":
         selected_row = results[results["company_name"] == selected_company].iloc[0]
 
         with st.form("trade_form"):
-            db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
-            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
-            fees = st.number_input("Kaufgebühren (€)", value=0.0)
-            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
+            db_mode = st.selectbox("Modus", ["TEST", "LIVE"], help="Wählen Sie zwischen dem Test-Portfolio oder dem Live-Portfolio.")
+            entry_price = st.number_input("Kaufkurs (€)", value=round(float(selected_row["latest_price"]), 2), help="Der Preis, zu dem die Aktie gekauft wurde.")
+            position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]), help="Der Gesamtwert der Position in Euro.")
+            fees = st.number_input("Kaufgebühren (€)", value=0.0, help="Anfallende Transaktionsgebühren beim Kauf.")
+            leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1, help="Der eingesetzte Hebel. 1.0 bedeutet kein Hebel.")
             submit = st.form_submit_button("Trade bestätigen")
 
             if submit:
@@ -414,14 +420,15 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f €"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f €"),
+                    "Profit (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Stop": st.column_config.NumberColumn(format="%.2f €"),
+                    "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                    "Leverage": st.column_config.NumberColumn(format="%.1fx")
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -440,8 +447,12 @@ if page in ["Test", "Live"]:
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
-            df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            df_trades,
+            column_config={
+                col: st.column_config.NumberColumn(format="%.2f") for col in num_cols
+            },
+            use_container_width=True,
+            hide_index=True
         )
 
         st.subheader("🛠 Aktionen")
@@ -458,14 +469,17 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
-                delete_trade(mode, selected_id)
-                st.rerun()
+            with st.popover("🗑 Delete Single Trade"):
+                st.warning("Möchten Sie diesen Trade wirklich unwiderruflich löschen?")
+                if st.button("Bestätigen & Löschen", key=f"{mode}_delete_btn_confirm", use_container_width=True):
+                    delete_trade(mode, selected_id)
+                    st.success("Trade gelöscht!")
+                    st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True, help="⚠️ Dies löscht alle Trades und setzt das Kapital im TEST-Portfolio zurück!"):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
