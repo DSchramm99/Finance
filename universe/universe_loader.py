@@ -13,12 +13,35 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    # Added 10s timeout to prevent DoS hangs
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
     tables = pd.read_html(response.text)
 
     return tables
+
+
+def get_company_name_safe(ticker):
+    """
+    Safely retrieves the company name for a ticker using Yahoo Finance Search API.
+    Includes a mandatory 10s timeout and a User-Agent header.
+    """
+    url = "https://query2.finance.yahoo.com/v1/finance/search"
+    params = {"q": ticker}
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    try:
+        # 🛡️ Sentinel: Mandatory 10s timeout to prevent DoS hangs
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("shortname", ticker)
+    except Exception:
+        pass
+    return ticker
 
 
 # =====================================================
