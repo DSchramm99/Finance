@@ -4,6 +4,30 @@ from io import StringIO
 
 
 # =====================================================
+# Safe Metadata Loader (NEW)
+# =====================================================
+
+def get_company_name_safe(ticker):
+    """
+    Fetches the company name using Yahoo Finance Search API.
+    Much faster than yf.Ticker(ticker).info.
+    """
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("shortname") or data["quotes"][0].get("longname") or ticker
+    except Exception:
+        pass
+    return ticker
+
+
+# =====================================================
 # Safe Wikipedia Loader
 # =====================================================
 
