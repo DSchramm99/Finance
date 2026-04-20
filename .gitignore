@@ -10,3 +10,6 @@ __pycache__/
 
 # OS Files (Mac)
 .DS_Store
+
+# Databases
+*.db

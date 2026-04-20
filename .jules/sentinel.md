@@ -1,0 +1,4 @@
+## 2025-05-15 - [Security Enhancement: Network Request Resilience]
+**Vulnerability:** Application hangs and potential Denial of Service (DoS) due to missing timeouts in network-bound requests (`requests.get`) and slow metadata retrieval using `yfinance`'s `.info` dictionary.
+**Learning:** External API calls without explicit timeouts can block worker threads indefinitely. `yfinance`'s `.info` is particularly prone to hanging. Using the Yahoo Finance Search API (`query2.finance.yahoo.com/v1/finance/search`) with a `timeout` and `params` encoding provides a more resilient and performant alternative for ticker metadata.
+**Prevention:** Always specify a `timeout` parameter in `requests` calls and prefer specialized search endpoints with structured parameters over generic metadata objects for simple lookups.

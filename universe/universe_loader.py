@@ -13,12 +13,35 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    # Added timeout to prevent DoS via hanging connections
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Wrap in StringIO to avoid future warnings and potential parsing issues
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
+
+
+def get_company_name_safe(ticker):
+    """
+    Retrieves the company name using Yahoo Finance Search API.
+    Uses a timeout and secure parameter encoding to prevent DoS and injection.
+    """
+    url = "https://query2.finance.yahoo.com/v1/finance/search"
+    params = {"q": ticker}
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    try:
+        # Secure API call with timeout
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("longname", ticker)
+    except Exception:
+        pass
+    return ticker
 
 
 # =====================================================
