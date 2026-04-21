@@ -13,10 +13,10 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
@@ -157,6 +157,32 @@ def load_universe():
         pass
 
     return list(set([t for t in universe if isinstance(t, str)]))
+
+
+# =====================================================
+# Safe Company Name Lookup
+# =====================================================
+
+def get_company_name_safe(ticker):
+    """
+    Retrieves the company name for a ticker via the Yahoo Finance Search API.
+    Provides a secure and performant alternative to yf.Ticker(ticker).info.
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search"
+        params = {"q": ticker, "quotesCount": 1}
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("shortname") or data["quotes"][0].get("longname") or ticker
+    except Exception:
+        pass
+
+    return ticker
 
 
 # =====================================================

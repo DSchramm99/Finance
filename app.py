@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from universe.universe_loader import get_index_universe
+from universe.universe_loader import get_index_universe, get_company_name_safe
 from database.db_manager import (
     init_db,
     get_capital,
@@ -173,12 +173,13 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
+        @st.cache_data(ttl=86400)
+        def get_cached_company_name(t):
+            return get_company_name_safe(t)
+
         company_names = {}
         for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
+            company_names[ticker] = get_cached_company_name(ticker)
         results["company_name"] = results["ticker"].map(company_names)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
@@ -341,16 +342,15 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
+        @st.cache_data(ttl=86400)
+        def get_cached_company_name_mon(t):
+            return get_company_name_safe(t)
+
         monitored_data = []
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                comp_name = get_cached_company_name_mon(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
