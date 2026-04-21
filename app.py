@@ -185,9 +185,11 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
+
+        results["risk_display"] = 100 - results["risk_score"]
 
         display_cols = [
             "company_name",
@@ -198,33 +200,38 @@ if page == "Signals":
             "stop_level",
             "take_profit",
             "trend_score",
-            "risk_score",
+            "risk_display",
             "final_score",
             "Investment (€)"
         ]
 
         display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
+            "company_name": "Unternehmen",
             "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
+            "leverage": "Hebel",
+            "latest_price": "Aktueller Kurs",
+            "entry_price": "Einstieg",
+            "stop_level": "Stop Loss",
             "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "trend_score": "Trend",
+            "risk_display": "Risiko",
+            "final_score": "Gesamt-Score",
+            "Investment (€)": "Investition"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Trend": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Risiko": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d", help="Höherer Wert = Höhere Volatilität (Risiko)"),
+                "Gesamt-Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d"),
+                "Aktueller Kurs": st.column_config.NumberColumn(format="%.2f €"),
+                "Einstieg": st.column_config.NumberColumn(format="%.2f €"),
+                "Stop Loss": st.column_config.NumberColumn(format="%.2f €"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                "Investition": st.column_config.NumberColumn(format="%.2f €"),
+                "Hebel": st.column_config.NumberColumn(format="%.1fx")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -434,7 +441,7 @@ if page in ["Test", "Live"]:
     df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
-        st.info("Keine Trades vorhanden.")
+        st.info("Keine Trades vorhanden. Nutze die 'Signals' Seite, um neue Trading-Chancen zu finden.")
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
@@ -451,21 +458,25 @@ if page in ["Test", "Live"]:
         with col1:
             if view_mode == "Offene Trades":
                 st.write("Trade schließen:")
-                exit_price = st.number_input("Exit Preis", key=f"{mode}_exit_val")
-                fee = st.number_input("Verkaufsgebühr", value=0.0, key=f"{mode}_fee_val")
-                if st.button("Close Trade", key=f"{mode}_close_btn_act"):
+                exit_price = st.number_input("Verkaufskurs (€)", key=f"{mode}_exit_val")
+                fee = st.number_input("Verkaufsgebühren (€)", value=0.0, key=f"{mode}_fee_val")
+                if st.button("Trade schließen", key=f"{mode}_close_btn_act"):
                     close_trade(mode, selected_id, exit_price, fee)
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
-                delete_trade(mode, selected_id)
-                st.rerun()
+            with st.popover("🗑 Trade löschen"):
+                st.warning(f"Bist du sicher, dass du Trade {selected_id} löschen möchtest?")
+                if st.button("Ja, permanent löschen", key=f"{mode}_delete_btn"):
+                    delete_trade(mode, selected_id)
+                    st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
-            reset_database("TEST", 2000)
-            st.success("Database Reset successful!")
-            st.rerun()
+        with st.popover("🔥 TEST-DATENBANK ZURÜCKSETZEN", use_container_width=True):
+            st.error("ACHTUNG: Dies löscht alle Trades in der Test-Datenbank!")
+            if st.button("Ja, alles zurücksetzen", use_container_width=True):
+                reset_database("TEST", 2000)
+                st.success("Database Reset successful!")
+                st.rerun()

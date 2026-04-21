@@ -1,0 +1,3 @@
+## 2025-05-15 - Visualizing Risk and Confirmation Safety
+**Learning:** In Streamlit applications, raw scores like risk or trend are more intuitive when visualized with `st.column_config.ProgressColumn`. For risk metrics specifically, ensuring the visual bar matches the user's mental model (e.g., higher bar = higher risk) often requires an inverse mapping (100 - score) at the UI layer. Additionally, `st.popover` provides a lightweight and non-disruptive way to implement confirmation steps for destructive actions, reducing accidental data loss.
+**Action:** Use `ProgressColumn` for all bounded numerical scores and wrap destructive buttons like 'Löschen' or 'Reset' in `st.popover` for added safety.
