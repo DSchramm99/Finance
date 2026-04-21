@@ -139,12 +139,49 @@ if page == "Signals":
         tickers = get_index_universe(index_choice)
         progress_bar = st.progress(0)
         status_text = st.empty()
-        results = []
 
+        # Performance optimization: Bulk download ticker data
+        status_text.text(f"Lade Marktdaten für {len(tickers)} Ticker herunter...")
+        data_all = yf.download(
+            tickers,
+            period="2y",
+            auto_adjust=True,
+            progress=False,
+            group_by='ticker'
+        )
+
+        results = []
         for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
+            status_text.text(f"Analysiere: {ticker} ({i+1}/{len(tickers)})")
+            try:
+                # Extract data for specific ticker
+                if len(tickers) > 1:
+                    data = data_all[ticker].copy()
+                else:
+                    data = data_all.copy()
+
+                # Ensure columns are not MultiIndex (relevant for bulk download)
+                if isinstance(data.columns, pd.MultiIndex):
+                    data.columns = data.columns.get_level_values(0)
+
+                if not data.empty:
+                    signal_data = generate_signal(data, leverage_mode=is_leveraged)
+                    if signal_data:
+                        results.append({
+                            "ticker": ticker,
+                            "latest_price": signal_data["latest_price"],
+                            "entry_price": signal_data["entry_price"],
+                            "stop_level": signal_data["stop_level"],
+                            "take_profit": signal_data["take_profit"],
+                            "trend_score": signal_data["trend_score"],
+                            "risk_score": signal_data["risk_score"],
+                            "final_score": signal_data["final_score"],
+                            "signal": signal_data["signal"],
+                            "leverage": signal_data["leverage"]
+                        })
+            except Exception as e:
+                print(f"Error analyzing {ticker}: {e}")
+
             progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
@@ -152,6 +189,7 @@ if page == "Signals":
         if results:
             df = pd.DataFrame(results)
             df = df.sort_values("final_score", ascending=False).head(5)
+            st.session_state["results"] = df
 
             # Investment calculation
             df["Investment (€)"] = df.apply(
@@ -173,13 +211,20 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
+        # Performance optimization: Parallelize company name fetching
+        def fetch_name(ticker):
             try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
+                return ticker, yf.Ticker(ticker).info.get("longName", ticker)
             except:
-                company_names[ticker] = ticker
+                return ticker, ticker
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            name_results = list(executor.map(fetch_name, results["ticker"]))
+
+        company_names = dict(name_results)
+        results = results.copy() # Avoid SettingWithCopyWarning
         results["company_name"] = results["ticker"].map(company_names)
+        st.session_state["results"] = results # Update session state with names
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -341,15 +386,14 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
-        monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+        @st.cache_data(ttl=86400)
+        def get_company_name(t):
+            try: return yf.Ticker(t).info.get("longName", t)
+            except: return t
+
+        def process_trade(trade):
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
                 comp_name = get_company_name(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
@@ -392,7 +436,7 @@ if page in ["Test", "Live"]:
                     action = "SELL (TP)"
                     row_color = 'background-color: #d4edda; color: #155724'
 
-                monitored_data.append({
+                return {
                     "id": trade["id"],
                     "Company": comp_name,
                     "Ticker": ticker,
@@ -404,9 +448,20 @@ if page in ["Test", "Live"]:
                     "Leverage": leverage,
                     "Action": action,
                     "_color": row_color
-                })
+                }
             except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+                return {"error": f"Error updating {ticker}: {e}"}
+
+        # Performance optimization: Parallelize trade monitoring
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # We convert it to a list of dicts to be passed to process_trade
+            trades_to_process = open_trades_df.to_dict('records')
+            monitored_results = list(executor.map(process_trade, trades_to_process))
+
+        monitored_data = [r for r in monitored_results if "error" not in r]
+        errors = [r["error"] for r in monitored_results if "error" in r]
+        for err in errors:
+            st.error(err)
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
