@@ -1,0 +1,4 @@
+## 2024-03-25 - Prevent Information Leakage and DoS
+**Vulnerability:** Binary database files and log files containing potentially sensitive information (like internal paths) were tracked by Git. Also, network calls lacked timeouts, making them vulnerable to DoS.
+**Learning:** Even if a file seems redundant (like legacy code), deleting it can be a breaking change if there's any chance of it being used or if 'ask first' constraints are in place. Prioritize non-destructive security enhancements.
+**Prevention:** Always check if files containing state or logs are in .gitignore. Use timeouts for all external requests.
