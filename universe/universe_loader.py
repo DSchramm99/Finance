@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import streamlit as st
 from io import StringIO
 
 
@@ -157,6 +158,29 @@ def load_universe():
         pass
 
     return list(set([t for t in universe if isinstance(t, str)]))
+
+
+# =====================================================
+# Company Name Helper
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """
+    Fetches the company name using Yahoo Finance Search API.
+    Lightweight alternative to yf.Ticker(ticker).info
+    """
+    url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("longname", data["quotes"][0].get("shortname", ticker))
+    except Exception:
+        pass
+    return ticker
 
 
 # =====================================================
