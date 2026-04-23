@@ -458,14 +458,16 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
+            if st.button("🗑 Trade löschen", key=f"{mode}_delete_btn", help="Löscht den ausgewählten Trade endgültig"):
                 delete_trade(mode, selected_id)
                 st.rerun()
 
     if mode == "TEST":
         st.divider()
-        st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
-            reset_database("TEST", 2000)
-            st.success("Database Reset successful!")
-            st.rerun()
+        st.subheader("⚠️ Datenbank-Wartung")
+        with st.popover("🔥 Test-Datenbank zurücksetzen", use_container_width=True):
+            st.warning("Dies löscht alle Trades und setzt das Kapital auf 2000 € zurück.")
+            if st.button("Löschen bestätigen", type="primary", use_container_width=True):
+                reset_database("TEST", 2000)
+                st.success("Datenbank erfolgreich zurückgesetzt!")
+                st.rerun()
