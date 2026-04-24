@@ -271,7 +271,7 @@ if page == "Signals":
 
         with st.form("trade_form"):
             db_mode = st.selectbox("Modus", ["TEST", "LIVE"])
-            entry_price = st.number_input("Kaufkurs", value=round(float(selected_row["latest_price"]), 2))
+            entry_price = st.number_input("Kaufkurs (€)", value=round(float(selected_row["latest_price"]), 2))
             position_value = st.number_input("Positionsgröße (€)", value=float(selected_row["Investment (€)"]))
             fees = st.number_input("Kaufgebühren (€)", value=0.0)
             leverage = st.number_input("Hebel (Leverage)", value=float(selected_row["leverage"]), min_value=1.0, max_value=10.0, step=0.1)
@@ -451,21 +451,25 @@ if page in ["Test", "Live"]:
         with col1:
             if view_mode == "Offene Trades":
                 st.write("Trade schließen:")
-                exit_price = st.number_input("Exit Preis", key=f"{mode}_exit_val")
-                fee = st.number_input("Verkaufsgebühr", value=0.0, key=f"{mode}_fee_val")
+                exit_price = st.number_input("Verkaufskurs (€)", key=f"{mode}_exit_val")
+                fee = st.number_input("Verkaufsgebühren (€)", value=0.0, key=f"{mode}_fee_val")
                 if st.button("Close Trade", key=f"{mode}_close_btn_act"):
                     close_trade(mode, selected_id, exit_price, fee)
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
-                delete_trade(mode, selected_id)
-                st.rerun()
+            with st.popover("🗑 Trade löschen", help="Diesen Trade dauerhaft aus der Datenbank löschen"):
+                st.warning("Möchten Sie diesen Trade wirklich löschen?")
+                if st.button("Löschen bestätigen", key=f"{mode}_delete_btn", type="primary"):
+                    delete_trade(mode, selected_id)
+                    st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
-            reset_database("TEST", 2000)
-            st.success("Database Reset successful!")
-            st.rerun()
+        with st.popover("🔥 TEST-DATENBANK ZURÜCKSETZEN", help="Alle Trades löschen und Startkapital auf 2000 € zurücksetzen", use_container_width=True):
+            st.error("ACHTUNG: Alle Daten in der Test-Datenbank werden unwiderruflich gelöscht!")
+            if st.button("Zurücksetzen bestätigen", type="primary", use_container_width=True):
+                reset_database("TEST", 2000)
+                st.success("Datenbank erfolgreich zurückgesetzt!")
+                st.rerun()
