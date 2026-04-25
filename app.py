@@ -5,6 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -141,11 +142,26 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # Optimization: Parallelize ticker analysis to speed up signal generation
+        ctx = get_script_run_ctx()
+
+        def analyze_with_ctx(ticker, lev_mode):
+            add_script_run_ctx(ctx=ctx)
+            return analyze_ticker(ticker, lev_mode)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {}
+            for ticker in tickers:
+                future = executor.submit(analyze_with_ctx, ticker, is_leveraged)
+                future_to_ticker[future] = ticker
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
+                result = future.result()
+                if result:
+                    results.append(result)
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
