@@ -1,0 +1,3 @@
+## 2025-04-25 - Standardizing Risk Display and Dataframe Styling
+**Learning:** In financial applications, "Risk" and "Stability" scores are often inverse. Standardizing on "Risiko" where a higher value (and longer progress bar) indicates higher volatility/risk is more intuitive for users than displaying a "Stability" score labeled as "Risk Score". Using Streamlit's `st.column_config.ProgressColumn` provides immediate visual hierarchy for these metrics.
+**Action:** Always verify if a "Score" represents a positive attribute (like Stability) or the attribute the user is actually looking for (like Risk), and transform it accordingly for the UI.

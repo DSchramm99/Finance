@@ -185,9 +185,12 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
+
+        # Risk Display Calculation: Higher value = Higher Risk (Volatility)
+        results["display_risk"] = 100 - results["risk_score"]
 
         display_cols = [
             "company_name",
@@ -198,33 +201,28 @@ if page == "Signals":
             "stop_level",
             "take_profit",
             "trend_score",
-            "risk_score",
+            "display_risk",
             "final_score",
             "Investment (€)"
         ]
 
-        display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
-            "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
-            "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
-        })
+        display_df = results[display_cols].copy()
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "company_name": st.column_config.TextColumn("Unternehmen", help="Name der Aktie"),
+                "signal": st.column_config.TextColumn("Signal", help="Kauf- oder Haltesignal"),
+                "leverage": st.column_config.NumberColumn("Hebel", format="%.1fx", help="Empfohlener Hebel"),
+                "latest_price": st.column_config.NumberColumn("Kurs (€)", format="%.2f €"),
+                "entry_price": st.column_config.NumberColumn("Einstieg (€)", format="%.2f €"),
+                "stop_level": st.column_config.NumberColumn("Stop Loss (€)", format="%.2f €"),
+                "take_profit": st.column_config.NumberColumn("Take Profit (€)", format="%.2f €"),
+                "trend_score": st.column_config.ProgressColumn("Trend Score", min_value=0, max_value=100, format="%d"),
+                "display_risk": st.column_config.ProgressColumn("Risiko", min_value=0, max_value=100, format="%d", help="Höherer Wert = Höhere Volatilität (Risiko)"),
+                "final_score": st.column_config.ProgressColumn("Gesamt Score", min_value=0, max_value=100, format="%d"),
+                "Investment (€)": st.column_config.NumberColumn("Investition (€)", format="%.2f €")
+            },
             use_container_width=True,
             hide_index=True
         )
