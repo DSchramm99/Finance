@@ -434,7 +434,7 @@ if page in ["Test", "Live"]:
     df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
-        st.info("Keine Trades vorhanden.")
+        st.info("Keine Trades vorhanden. Gehe zu 'Signals', um neue Trades zu finden.")
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
@@ -458,14 +458,18 @@ if page in ["Test", "Live"]:
                     st.rerun()
         with col2:
             st.write("Trade löschen:")
-            if st.button("🗑 Delete Single Trade", key=f"{mode}_delete_btn"):
-                delete_trade(mode, selected_id)
-                st.rerun()
+            with st.popover("🗑 Delete Single Trade"):
+                st.warning("Möchten Sie diesen Trade wirklich unwiderruflich löschen?")
+                if st.button("Bestätigen", key=f"{mode}_delete_btn"):
+                    delete_trade(mode, selected_id)
+                    st.rerun()
 
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
-            reset_database("TEST", 2000)
-            st.success("Database Reset successful!")
-            st.rerun()
+        with st.popover("🔥 Reset Database", use_container_width=True):
+            st.error("ACHTUNG: Dies wird die gesamte Test-Datenbank löschen!")
+            if st.button("BESTÄTIGEN - ALLES LÖSCHEN", use_container_width=True):
+                reset_database("TEST", 2000)
+                st.success("Database Reset successful!")
+                st.rerun()

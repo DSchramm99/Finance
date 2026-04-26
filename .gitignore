@@ -10,3 +10,8 @@ __pycache__/
 
 # OS Files (Mac)
 .DS_Store
+
+# Data and Logs
+*.db
+*.log
+backtesting/verification_results_leveraged.csv
