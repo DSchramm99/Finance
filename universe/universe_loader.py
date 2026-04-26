@@ -16,7 +16,8 @@ def load_wikipedia_table(url):
     response = requests.get(url, headers=headers)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    # Wrap HTML string in StringIO for Pandas 3.0+ compatibility
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 
@@ -175,10 +176,12 @@ def get_index_universe(index_name):
         return load_dowjones()
 
     elif index_name == "DAX":
-        return load_dax()
+        # Add .DE suffix for German tickers
+        return [f"{t}.DE" if not t.endswith(".DE") else t for t in load_dax()]
 
     elif index_name == "TecDAX":
-        return load_tecdax()
+        # Add .DE suffix for German tickers
+        return [f"{t}.DE" if not t.endswith(".DE") else t for t in load_tecdax()]
 
     elif index_name == "All":
         return load_universe()

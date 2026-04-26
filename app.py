@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import streamlit.runtime.scriptrunner as scriptrunner
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -22,6 +24,29 @@ from database.db_manager import (
 # ============================
 # 🔹 Position Manager & Signal Engine
 # ============================
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """
+    Faster metadata retrieval using Yahoo Finance Search API.
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search"
+        params = {"q": ticker, "quotesCount": 1}
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, params=params, headers=headers, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("longname") or data["quotes"][0].get("shortname") or ticker
+    except:
+        pass
+
+    # Fallback to Ticker.info if search fails
+    try:
+        return yf.Ticker(ticker).info.get("longName", ticker)
+    except:
+        return ticker
 
 from strategy.position_manager import calculate_position_value
 from strategy.signal_engine import generate_signal, add_indicators
@@ -141,11 +166,27 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        ctx = scriptrunner.get_script_run_ctx()
+
+        def threaded_analyze(t, lev):
+            scriptrunner.add_script_run_ctx(ctx)
+            return analyze_ticker(t, lev)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {executor.submit(threaded_analyze, ticker, is_leveraged): ticker for ticker in tickers}
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    st.error(f"Error analyzing {ticker}: {e}")
+
+                progress = (i + 1) / len(tickers)
+                progress_bar.progress(progress)
+                status_text.text(f"Analysiert: {ticker} ({i+1}/{len(tickers)})")
 
         status_text.text("Fertig ✅")
 
@@ -173,13 +214,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Use the optimized metadata fetcher
+        results["company_name"] = results["ticker"].apply(get_company_name_safe)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,12 +381,8 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                # Use the centralized optimized metadata fetcher
+                comp_name = get_company_name_safe(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
