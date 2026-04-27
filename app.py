@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -25,6 +27,27 @@ from database.db_manager import (
 
 from strategy.position_manager import calculate_position_value
 from strategy.signal_engine import generate_signal, add_indicators
+# =====================================================
+# 🔹 Security & Performance Helpers
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """
+    Safely fetch company name using a lightweight API call.
+    Replaces yf.Ticker(ticker).info which is slow and prone to errors.
+    """
+    try:
+        # Using a lightweight search API is much faster than fetching full Ticker info
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
+        if data.get("quotes"):
+            return data["quotes"][0].get("shortname") or data["quotes"][0].get("longname") or ticker
+    except Exception:
+        pass
+    return ticker
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
@@ -141,11 +164,23 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        ctx = get_script_run_ctx()
+
+        def analyze_with_ctx(ticker, lev_mode):
+            add_script_run_ctx(ctx)
+            return analyze_ticker(ticker, lev_mode)
+
+        # Performance: Parallel ticker analysis with ThreadPoolExecutor
+        # max_workers=5 balances speed and API stability
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(analyze_with_ctx, ticker, is_leveraged): ticker for ticker in tickers}
+            for i, future in enumerate(as_completed(futures)):
+                ticker = futures[future]
+                status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
+                result = future.result()
+                if result:
+                    results.append(result)
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
@@ -173,13 +208,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Speed boost: Use our cached, lightweight metadata fetcher
+        results["company_name"] = results["ticker"].apply(get_company_name_safe)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -345,12 +375,7 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                comp_name = get_company_name_safe(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
