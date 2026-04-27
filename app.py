@@ -189,6 +189,11 @@ if page == "Signals":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
+        display_df = results.copy()
+        # README.md says: Risk Display = 100 - RiskScore
+        # This makes lower values represent lower risk.
+        display_df["Risiko"] = 100 - display_df["risk_score"]
+
         display_cols = [
             "company_name",
             "signal",
@@ -198,33 +203,39 @@ if page == "Signals":
             "stop_level",
             "take_profit",
             "trend_score",
-            "risk_score",
+            "Risiko",
             "final_score",
             "Investment (€)"
         ]
 
-        display_df = results[display_cols].rename(columns={
-            "company_name": "Company",
+        display_df = display_df[display_cols].rename(columns={
+            "company_name": "Unternehmen",
             "signal": "Signal",
-            "leverage": "Leverage",
-            "latest_price": "Latest Price",
-            "entry_price": "Entry Price",
-            "stop_level": "Stop Level",
-            "take_profit": "Take Profit",
-            "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
-            "final_score": "Final Score"
+            "leverage": "Hebel",
+            "latest_price": "Aktueller Preis",
+            "entry_price": "Einstieg",
+            "stop_level": "Stop-Loss",
+            "take_profit": "Take-Profit",
+            "trend_score": "Trend-Score",
+            "final_score": "Gesamt-Score",
+            "Investment (€)": "Investment"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Unternehmen": st.column_config.TextColumn("Unternehmen", help="Name der Aktie"),
+                "Signal": st.column_config.TextColumn("Signal", help="Handelsempfehlung"),
+                "Hebel": st.column_config.NumberColumn("Hebel", format="%.1fx", help="Empfohlener Hebel"),
+                "Aktueller Preis": st.column_config.NumberColumn("Aktueller Preis", format="%.2f €"),
+                "Einstieg": st.column_config.NumberColumn("Einstieg", format="%.2f €"),
+                "Stop-Loss": st.column_config.NumberColumn("Stop-Loss", format="%.2f €"),
+                "Take-Profit": st.column_config.NumberColumn("Take-Profit", format="%.2f €"),
+                "Trend-Score": st.column_config.ProgressColumn("Trend-Score", min_value=0, max_value=100, format="%d", help="Höherer Wert = Stärkerer Aufwärtstrend"),
+                "Risiko": st.column_config.ProgressColumn("Risiko", min_value=0, max_value=100, format="%d", help="Höherer Wert = Höhere Volatilität (Risiko)"),
+                "Gesamt-Score": st.column_config.ProgressColumn("Gesamt-Score", min_value=0, max_value=100, format="%d", help="Kombinierter Score aus Trend und Risiko"),
+                "Investment": st.column_config.NumberColumn("Investment", format="%.2f €")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -434,7 +445,7 @@ if page in ["Test", "Live"]:
     df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
-        st.info("Keine Trades vorhanden.")
+        st.info("Keine Trades vorhanden. Gehe zum Bereich 'Signale', um neue Handelsmöglichkeiten zu entdecken!")
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
