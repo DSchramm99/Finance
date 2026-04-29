@@ -5,6 +5,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import streamlit.runtime.scriptrunner as scriptrunner
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -91,6 +92,14 @@ if page == "Signals":
     # Cached Price Data
     # =====================================================
 
+@st.cache_data(ttl=86400)
+def get_company_name(t):
+    try:
+        return yf.Ticker(t).info.get("longName", t)
+    except:
+        return t
+
+
     @st.cache_data(ttl=3600)
     def load_price_data(ticker):
         data = yf.download(
@@ -141,11 +150,27 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        # BOLT OPTIMIZATION: Parallel ticker analysis
+        ctx = scriptrunner.get_script_run_ctx()
+
+        def parallel_analyze(t, lev):
+            if ctx:
+                scriptrunner.add_script_run_ctx(ctx)
+            return analyze_ticker(t, lev)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {executor.submit(parallel_analyze, ticker, is_leveraged): ticker for ticker in tickers}
+
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    st.error(f"Fehler bei {ticker}: {e}")
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
@@ -173,13 +198,8 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # BOLT OPTIMIZATION: Use cached company name fetcher
+        results["company_name"] = results["ticker"].apply(get_company_name)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -341,72 +361,84 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
-        monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+        # BOLT OPTIMIZATION: Parallel data fetching for monitoring
+        def monitor_trade(trade):
             ticker = trade["ticker"]
-            try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
+            comp_name = get_company_name(ticker)
 
-                comp_name = get_company_name(ticker)
+            start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            if trade["timestamp"]:
+                start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
 
-                start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-                if trade["timestamp"]:
-                    start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
+            data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+            data = add_indicators(data)
 
-                data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
-                if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-                data = add_indicators(data)
+            if trade["timestamp"]:
+                trade_time = pd.Timestamp(trade["timestamp"])
+                data_since_trade = data[data.index >= trade_time]
+                if data_since_trade.empty:
+                    data_since_trade = data.tail(1)
+                highest_price = data_since_trade["High"].max()
+            else:
+                highest_price = data["High"].tail(10).max()
 
-                if trade["timestamp"]:
-                    trade_time = pd.Timestamp(trade["timestamp"])
-                    data_since_trade = data[data.index >= trade_time]
-                    if data_since_trade.empty: data_since_trade = data.tail(1)
-                    highest_price = data_since_trade["High"].max()
-                else:
-                    highest_price = data["High"].tail(10).max()
+            latest = data.iloc[-1]
+            price = float(latest["Close"])
+            atr = float(latest["ATR"])
+            leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
 
-                latest = data.iloc[-1]
-                price = float(latest["Close"])
-                atr = float(latest["ATR"])
-                leverage = trade["leverage"] if trade["leverage"] is not None else 1.0
+            # Chandelier trailing stop
+            effective_k = 1.5 + (max(0, leverage - 1) * 0.5)
+            chandelier_stop = highest_price - (effective_k * atr)
+            actual_stop = max(trade["stop"], chandelier_stop)
+            tp_level = trade["take_profit"]
 
-                # Chandelier trailing stop
-                effective_k = 1.5 + (max(0, leverage - 1) * 0.5)
-                chandelier_stop = highest_price - (effective_k * atr)
-                actual_stop = max(trade["stop"], chandelier_stop)
-                tp_level = trade["take_profit"]
+            action = "HOLD"
+            row_color = ""
+            # Check liquidation
+            if leverage > 1.0 and price <= trade["entry"] * (1 - (1.0 / leverage)):
+                action = "LIQUIDATION"
+                row_color = 'background-color: #f8d7da; color: #721c24'
+            elif price <= actual_stop:
+                action = "SELL (STOP)"
+                row_color = 'background-color: #f8d7da; color: #721c24'
+            elif price >= tp_level:
+                action = "SELL (TP)"
+                row_color = 'background-color: #d4edda; color: #155724'
 
-                action = "HOLD"
-                row_color = ""
-                # Check liquidation
-                if leverage > 1.0 and price <= trade["entry"] * (1 - (1.0 / leverage)):
-                    action = "LIQUIDATION"
-                    row_color = 'background-color: #f8d7da; color: #721c24'
-                elif price <= actual_stop:
-                    action = "SELL (STOP)"
-                    row_color = 'background-color: #f8d7da; color: #721c24'
-                elif price >= tp_level:
-                    action = "SELL (TP)"
-                    row_color = 'background-color: #d4edda; color: #155724'
+            return {
+                "id": trade["id"],
+                "Company": comp_name,
+                "Ticker": ticker,
+                "Price": price,
+                "Entry": trade["entry"],
+                "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
+                "Stop": actual_stop,
+                "Take Profit": tp_level,
+                "Leverage": leverage,
+                "Action": action,
+                "_color": row_color
+            }
 
-                monitored_data.append({
-                    "id": trade["id"],
-                    "Company": comp_name,
-                    "Ticker": ticker,
-                    "Price": price,
-                    "Entry": trade["entry"],
-                    "Profit (%)": ((price / trade["entry"]) - 1) * leverage * 100,
-                    "Stop": actual_stop,
-                    "Take Profit": tp_level,
-                    "Leverage": leverage,
-                    "Action": action,
-                    "_color": row_color
-                })
-            except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+        monitored_data = []
+        ctx = scriptrunner.get_script_run_ctx()
+
+        def parallel_monitor(tr):
+            if ctx:
+                scriptrunner.add_script_run_ctx(ctx)
+            return monitor_trade(tr)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(parallel_monitor, trade) for _, trade in open_trades_df.iterrows()]
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        monitored_data.append(result)
+                except Exception as e:
+                    st.error(f"Error in parallel monitoring: {e}")
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
