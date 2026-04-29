@@ -180,6 +180,7 @@ if page == "Signals":
             except:
                 company_names[ticker] = ticker
         results["company_name"] = results["ticker"].map(company_names)
+        results["risiko_score"] = 100 - results["risk_score"]
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -198,7 +199,7 @@ if page == "Signals":
             "stop_level",
             "take_profit",
             "trend_score",
-            "risk_score",
+            "risiko_score",
             "final_score",
             "Investment (€)"
         ]
@@ -212,19 +213,23 @@ if page == "Signals":
             "stop_level": "Stop Level",
             "take_profit": "Take Profit",
             "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
+            "risiko_score": "Risiko",
             "final_score": "Final Score"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f €"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f €"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f €"),
+                "Leverage": st.column_config.NumberColumn(format="%.1fx"),
+                "Trend Score": st.column_config.ProgressColumn(min_value=0, max_value=100, help="Höherer Wert = Stärkerer Aufwärtstrend"),
+                "Risiko": st.column_config.ProgressColumn(min_value=0, max_value=100, help="Höherer Wert = Höhere Volatilität (Risiko)"),
+                "Final Score": st.column_config.ProgressColumn(min_value=0, max_value=100, help="Kombination aus Trend und Risiko")
+            },
             use_container_width=True,
             hide_index=True
         )
@@ -414,14 +419,15 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f €"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f €"),
+                    "Profit (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Stop": st.column_config.NumberColumn(format="%.2f €"),
+                    "Take Profit": st.column_config.NumberColumn(format="%.2f €"),
+                    "Leverage": st.column_config.NumberColumn(format="%.1fx")
+                },
                 column_order=display_cols,
                 use_container_width=True,
                 hide_index=True
@@ -435,6 +441,9 @@ if page in ["Test", "Live"]:
 
     if df_trades.empty:
         st.info("Keine Trades vorhanden.")
+        if st.button("🚀 Jetzt Signale scannen", key=f"{mode}_scan_cta"):
+            st.session_state["page"] = "Signals"
+            st.rerun()
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
