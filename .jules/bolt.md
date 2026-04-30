@@ -1,0 +1,3 @@
+## 2025-05-15 - Parallelizing Streamlit Index Scans
+**Learning:** Parallelizing signal generation with `ThreadPoolExecutor(max_workers=5)` is preferred over bulk `yf.download` to maintain granular progress bar updates in the UI, despite bulk download being faster (~10x vs ~4x). However, Streamlit script context MUST be manually propagated to each worker thread using `add_script_run_ctx` for `@st.cache_data` and other Streamlit features to function correctly.
+**Action:** When using threads in Streamlit, always capture the context via `get_script_run_ctx()` in the main thread and apply it via `add_script_run_ctx(ctx)` inside the worker function.
