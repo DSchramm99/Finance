@@ -216,15 +216,22 @@ if page == "Signals":
             "final_score": "Final Score"
         })
 
+        # Invert Risk Score for more intuitive display (Higher value = Higher volatility/risk)
+        display_df["Risk Score"] = 100 - display_df["Risk Score"]
+
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn("Latest Price", format="%.2f €", help="Current market price"),
+                "Entry Price": st.column_config.NumberColumn("Entry Price", format="%.2f €", help="Target entry price based on strategy"),
+                "Stop Level": st.column_config.NumberColumn("Stop Level", format="%.2f €", help="Stop-loss price level for protection"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", format="%.2f €", help="Take-profit target price"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", format="%.2f €", help="Recommended investment amount"),
+                "Leverage": st.column_config.NumberColumn("Leverage", format="%.1fx", help="Suggested leverage factor"),
+                "Trend Score": st.column_config.ProgressColumn("Trend Score", min_value=0, max_value=100, format="%d", help="Trend strength (0-100)"),
+                "Risk Score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100, format="%d", help="Volatility-based risk (higher = more volatile/risky)"),
+                "Final Score": st.column_config.ProgressColumn("Final Score", min_value=0, max_value=100, format="%d", help="Overall opportunity ranking")
+            },
             use_container_width=True,
             hide_index=True
         )

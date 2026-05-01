@@ -10,3 +10,7 @@ __pycache__/
 
 # OS Files (Mac)
 .DS_Store
+
+# Streamlit
+streamlit.log
+.streamlit/
