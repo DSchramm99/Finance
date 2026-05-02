@@ -1,105 +1,11 @@
 
 Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
 
+2026-05-02 01:11:23.021 Uvicorn server started on 0.0.0.0:8501
 
   You can now view your Streamlit app in your browser.
 
   Local URL: http://localhost:8501
   Network URL: http://192.168.0.2:8501
-  External URL: http://34.27.142.64:8501
+  External URL: http://34.46.237.233:8501
 
-/app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
-  tables = pd.read_html(response.text)
-$BRK.B: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
-
-1 Failed download:
-['BRK.B']: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
-$BF.B: possibly delisted; no price data found  (period=2y)
-
-1 Failed download:
-['BF.B']: possibly delisted; no price data found  (period=2y)
-Failed to get ticker 'CVNA' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
-Failed to get ticker 'SCHW' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
-/app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
-  tables = pd.read_html(response.text)
-/app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
-  tables = pd.read_html(response.text)
-$BRK.B: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
-
-1 Failed download:
-['BRK.B']: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
-
-1 Failed download:
-['TECH']: TypeError("'NoneType' object is not subscriptable")
-
-1 Failed download:
-['BX']: TypeError("'NoneType' object is not subscriptable")
-$BF.B: possibly delisted; no price data found  (period=2y)
-
-1 Failed download:
-['BF.B']: possibly delisted; no price data found  (period=2y)
-
-1 Failed download:
-['CMCSA']: TypeError("'NoneType' object is not subscriptable")
-
-1 Failed download:
-['COO']: TypeError("'NoneType' object is not subscriptable")
-2026-03-25 10:03:34.099 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:04:10.193 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:05:09.761 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:05:09.781 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:06:39.657 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:06:39.676 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:23:15.432 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:23:15.478 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:23:18.046 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2026-03-25 10:23:18.103 Please replace `use_container_width` with `width`.
-
-`use_container_width` will be removed after 2025-12-31.
-
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-/app/universe/universe_loader.py:19: FutureWarning: Passing literal html to 'read_html' is deprecated and will be removed in a future version. To read from a literal string, wrap it in a 'StringIO' object.
-  tables = pd.read_html(response.text)
-Failed to get ticker 'FTV' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
-
-1 Failed download:
-['FTV']: TypeError("'NoneType' object is not subscriptable")
-Failed to get ticker 'FOXA' reason: Failed to perform, curl: (28) Resolving timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
-Failed to get ticker 'HUBB' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
-Failed to get ticker 'JNJ' reason: Failed to perform, curl: (28) Connection timed out after 10002 milliseconds. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.

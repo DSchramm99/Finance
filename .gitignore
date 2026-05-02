@@ -9,4 +9,4 @@ __pycache__/
 .env
 
 # OS Files (Mac)
-.DS_Store
+.DS_Storestreamlit.log

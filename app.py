@@ -45,13 +45,13 @@ if "page" not in st.session_state:
 
 st.sidebar.header("Navigation")
 
-if st.sidebar.button("📊 Signals", use_container_width=True):
+if st.sidebar.button("📊 Signals", width="stretch"):
     st.session_state["page"] = "Signals"
 
-if st.sidebar.button("🧪 Test Portfolio", use_container_width=True):
+if st.sidebar.button("🧪 Test Portfolio", width="stretch"):
     st.session_state["page"] = "Test"
 
-if st.sidebar.button("💰 Live Portfolio", use_container_width=True):
+if st.sidebar.button("💰 Live Portfolio", width="stretch"):
     st.session_state["page"] = "Live"
 
 page = st.session_state["page"]
@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -217,15 +217,37 @@ if page == "Signals":
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
-            use_container_width=True,
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score",
+                    help="Mist die Trendstärke (0-100)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d",
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    help="Volatilitäts-basierter Score (0-100). Höher ist stabiler.",
+                    min_value=0,
+                    max_value=100,
+                    format="%d",
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    help="Gewichtete Kombination aus Trend (60%) und Risiko (40%)",
+                    min_value=0,
+                    max_value=100,
+                    format="%d",
+                ),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", format="%.2f €"),
+                "Entry Price": st.column_config.NumberColumn("Entry Price", format="%.2f €"),
+                "Stop Level": st.column_config.NumberColumn("Stop Level", format="%.2f €"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", format="%.2f €"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", format="%.2f €"),
+                "Leverage": st.column_config.NumberColumn("Leverage", format="%.1fx"),
+            },
+            width="stretch",
             hide_index=True
         )
 
@@ -257,7 +279,7 @@ if page == "Signals":
             fig.add_hline(y=float(selected_row["stop_level"]), line_dash="dash")
             fig.add_hline(y=float(selected_row["take_profit"]), line_dash="dash")
             fig.update_layout(template="plotly_white", height=500, title=selected_company)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
 
     # =====================================================
@@ -308,7 +330,7 @@ if page in ["Test", "Live"]:
         fig_bar.add_trace(go.Bar(name="Investiert", x=["Kapital"], y=[invested]))
         fig_bar.add_trace(go.Bar(name="Uninvestiert", x=["Kapital"], y=[cash]))
         fig_bar.update_layout(barmode="stack", title="Kapitalverteilung", height=350, template="plotly_white")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
     with col_v2:
         total_profit_abs = 0
@@ -335,7 +357,7 @@ if page in ["Test", "Live"]:
             fig_line = go.Figure()
             fig_line.add_trace(go.Scatter(y=equity_curve, mode='lines+markers', name="Portfolio Wert"))
             fig_line.update_layout(title="Kapitalentwicklung (Abgeschlossene Trades)", height=250, template="plotly_white")
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, width="stretch")
 
     # REAL TIME MONITORING FOR OPEN TRADES
     if not open_trades_df.empty:
@@ -423,7 +445,7 @@ if page in ["Test", "Live"]:
                     "Leverage": "{:.1f}x"
                 }),
                 column_order=display_cols,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -434,14 +456,14 @@ if page in ["Test", "Live"]:
     df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
-        st.info("Keine Trades vorhanden.")
+        st.info("Keine Trades vorhanden. Gehe zum Bereich 📊 Signals, um neue Chancen zu finden.")
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
             df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            width="stretch"
         )
 
         st.subheader("🛠 Aktionen")
@@ -465,7 +487,7 @@ if page in ["Test", "Live"]:
     if mode == "TEST":
         st.divider()
         st.subheader("⚠️ Database Maintenance")
-        if st.button("🔥 RESET ENTIRE TEST DATABASE", use_container_width=True):
+        if st.button("🔥 RESET ENTIRE TEST DATABASE", width="stretch"):
             reset_database("TEST", 2000)
             st.success("Database Reset successful!")
             st.rerun()
