@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -25,6 +27,18 @@ from database.db_manager import (
 
 from strategy.position_manager import calculate_position_value
 from strategy.signal_engine import generate_signal, add_indicators
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """Fetches company name using a fast search API call instead of slow Ticker.info"""
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
+        return data['quotes'][0]['longname']
+    except:
+        return ticker
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
@@ -118,6 +132,7 @@ if page == "Signals":
 
             return {
                 "ticker": ticker,
+                "company_name": get_company_name_safe(ticker),
                 "latest_price": signal_data["latest_price"],
                 "entry_price": signal_data["entry_price"],
                 "stop_level": signal_data["stop_level"],
@@ -141,11 +156,23 @@ if page == "Signals":
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        ctx = get_script_run_ctx()
+
+        def worker(ticker, lev_mode):
+            add_script_run_ctx(ctx)
+            return analyze_ticker(ticker, lev_mode)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {executor.submit(worker, t, is_leveraged): t for t in tickers}
+            for i, future in enumerate(as_completed(future_to_ticker)):
+                ticker = future_to_ticker[future]
+                status_text.text(f"Analysiere: {ticker} ({i+1}/{len(tickers)})")
+                try:
+                    res = future.result()
+                    if res: results.append(res)
+                except:
+                    pass
+                progress_bar.progress((i + 1) / len(tickers))
 
         status_text.text("Fertig ✅")
 
@@ -172,14 +199,6 @@ if page == "Signals":
 
     if "results" in st.session_state:
         results = st.session_state["results"]
-
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -342,15 +361,14 @@ if page in ["Test", "Live"]:
         st.subheader("📡 Real-time Monitoring")
 
         monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+
+        ctx = get_script_run_ctx()
+
+        def update_trade_info(trade):
+            add_script_run_ctx(ctx)
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                comp_name = get_company_name_safe(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
@@ -392,7 +410,7 @@ if page in ["Test", "Live"]:
                     action = "SELL (TP)"
                     row_color = 'background-color: #d4edda; color: #155724'
 
-                monitored_data.append({
+                return {
                     "id": trade["id"],
                     "Company": comp_name,
                     "Ticker": ticker,
@@ -404,9 +422,16 @@ if page in ["Test", "Live"]:
                     "Leverage": leverage,
                     "Action": action,
                     "_color": row_color
-                })
+                }
             except Exception as e:
                 st.error(f"Error updating {ticker}: {e}")
+                return None
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(update_trade_info, trade) for _, trade in open_trades_df.iterrows()]
+            for future in as_completed(futures):
+                res = future.result()
+                if res: monitored_data.append(res)
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
