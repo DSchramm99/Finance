@@ -225,7 +225,30 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
-            use_container_width=True,
+            column_config={
+                "Trend Score": st.column_config.ProgressColumn(
+                    "Trend Score",
+                    help="Measure of trend strength based on SMA20",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Risk Score": st.column_config.ProgressColumn(
+                    "Risk Score",
+                    help="Measure of volatility (0=Stable, 100=Volatile)",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    "Final Score",
+                    help="Weighted combination of Trend and Risk",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+            width="stretch",
             hide_index=True
         )
 
@@ -423,7 +446,7 @@ if page in ["Test", "Live"]:
                     "Leverage": "{:.1f}x"
                 }),
                 column_order=display_cols,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -434,14 +457,17 @@ if page in ["Test", "Live"]:
     df_trades = open_trades_df if view_mode == "Offene Trades" else closed_trades_df
 
     if df_trades.empty:
-        st.info("Keine Trades vorhanden.")
+        st.info("Keine Trades vorhanden. Finden Sie neue Chancen auf der Signale-Seite!")
+        if st.button("🚀 Zu den Signalen", use_container_width=True):
+            st.session_state["page"] = "Signals"
+            st.rerun()
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
             df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            width="stretch"
         )
 
         st.subheader("🛠 Aktionen")
