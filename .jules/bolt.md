@@ -1,0 +1,3 @@
+## 2025-05-15 - Streamlit Threading and API Optimization
+**Learning:** Parallelizing signal generation with `ThreadPoolExecutor` is effective for performance, but requires `add_script_run_ctx` to maintain Streamlit's script context (caching, session state). Also, replacing `yf.Ticker(ticker).info` with the Yahoo Search API significantly reduces metadata fetch latency. In a multi-page app, common helper functions used by threads must be defined at the module level to avoid `NameError`.
+**Action:** Always propagate Streamlit context to worker threads and define thread-safe shared utilities at the module level.

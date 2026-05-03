@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from universe.universe_loader import get_index_universe
 from database.db_manager import (
@@ -28,6 +30,26 @@ from strategy.signal_engine import generate_signal, add_indicators
 
 init_db("TEST", 2000)
 init_db("LIVE", 2000)
+
+# =====================================================
+# 🔹 Common Helpers
+# =====================================================
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """
+    Fast lookup for company names using Yahoo Search API.
+    Way faster than yf.Ticker(ticker).info.
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        res = requests.get(url, headers=headers, timeout=5).json()
+        if res.get('quotes'):
+            return res['quotes'][0].get('longname', ticker)
+    except:
+        pass
+    return ticker
 
 # =====================================================
 # Page Setup
@@ -108,7 +130,9 @@ if page == "Signals":
     # Ticker Analyse
     # =====================================================
 
-    def analyze_ticker(ticker, lev_mode):
+    def analyze_ticker(ticker, lev_mode, ctx=None):
+        if ctx:
+            add_script_run_ctx(ctx)
         try:
             data = load_price_data(ticker)
             if data.empty: return None
@@ -137,17 +161,23 @@ if page == "Signals":
 
     if st.sidebar.button("🚀 Generate Top 5 Signals"):
         tickers = get_index_universe(index_choice)
-        progress_bar = st.progress(0)
+        progress_bar = st.progress(0.0)
         status_text = st.empty()
         results = []
 
-        for i, ticker in enumerate(tickers):
-            status_text.text(f"Lade & analysiere: {ticker} ({i+1}/{len(tickers)})")
-            result = analyze_ticker(ticker, is_leveraged)
-            if result: results.append(result)
-            progress_bar.progress((i + 1) / len(tickers))
+        ctx = get_script_run_ctx()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(analyze_ticker, t, is_leveraged, ctx) for t in tickers]
+            for i, future in enumerate(as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
 
-        status_text.text("Fertig ✅")
+                progress = (i + 1) / len(tickers)
+                progress_bar.progress(progress)
+                status_text.text(f"Analysiere: {len(results)} Treffer ({i+1}/{len(tickers)})")
+
+        status_text.text(f"Fertig ✅ ({len(results)} Treffer)")
 
         if results:
             df = pd.DataFrame(results)
@@ -173,13 +203,9 @@ if page == "Signals":
     if "results" in st.session_state:
         results = st.session_state["results"]
 
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
+        # Efficient company name lookup
+        if "company_name" not in results.columns:
+            results["company_name"] = results["ticker"].apply(get_company_name_safe)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -341,20 +367,19 @@ if page in ["Test", "Live"]:
     if not open_trades_df.empty:
         st.subheader("📡 Real-time Monitoring")
 
-        monitored_data = []
-        for _, trade in open_trades_df.iterrows():
+        def monitor_trade(trade, ctx=None):
+            if ctx:
+                add_script_run_ctx(ctx)
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                comp_name = get_company_name_safe(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
-                    start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
+                    try:
+                        start_date = (datetime.strptime(trade["timestamp"], "%Y-%m-%d %H:%M:%S") - timedelta(days=14)).strftime("%Y-%m-%d")
+                    except:
+                        pass
 
                 data = yf.download(ticker, start=start_date, auto_adjust=True, progress=False)
                 if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
@@ -392,7 +417,7 @@ if page in ["Test", "Live"]:
                     action = "SELL (TP)"
                     row_color = 'background-color: #d4edda; color: #155724'
 
-                monitored_data.append({
+                return {
                     "id": trade["id"],
                     "Company": comp_name,
                     "Ticker": ticker,
@@ -404,9 +429,20 @@ if page in ["Test", "Live"]:
                     "Leverage": leverage,
                     "Action": action,
                     "_color": row_color
-                })
+                }
             except Exception as e:
-                st.error(f"Error updating {ticker}: {e}")
+                return {"id": trade["id"], "Ticker": ticker, "error": str(e)}
+
+        monitored_data = []
+        ctx = get_script_run_ctx()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(monitor_trade, trade, ctx) for _, trade in open_trades_df.iterrows()]
+            for future in as_completed(futures):
+                res = future.result()
+                if "error" in res:
+                    st.error(f"Error updating {res['Ticker']}: {res['error']}")
+                else:
+                    monitored_data.append(res)
 
         if monitored_data:
             mon_df = pd.DataFrame(monitored_data)
