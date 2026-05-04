@@ -216,16 +216,25 @@ if page == "Signals":
             "final_score": "Final Score"
         })
 
+        # Invert risk score for "danger meter" display (higher = more volatile/risky)
+        display_df["Risk Score"] = 100 - display_df["Risk Score"]
+
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
-            use_container_width=True,
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Company": st.column_config.TextColumn("Company", help="Company Name", width="medium"),
+                "Signal": st.column_config.TextColumn("Signal", help="Trading Signal (BUY/HOLD)", width="small"),
+                "Leverage": st.column_config.NumberColumn("Lev", help="Recommended leverage factor", format="%.1fx", width="small"),
+                "Latest Price": st.column_config.NumberColumn("Price", help="Current market price", format="%.2f", width="small"),
+                "Entry Price": st.column_config.NumberColumn("Entry", help="Recommended entry price", format="%.2f", width="small"),
+                "Stop Level": st.column_config.NumberColumn("Stop", help="Recommended stop-loss level", format="%.2f", width="small"),
+                "Take Profit": st.column_config.NumberColumn("TP", help="Recommended take-profit target", format="%.2f", width="small"),
+                "Trend Score": st.column_config.ProgressColumn("Trend", help="Trend strength (0-100)", min_value=0, max_value=100, format="%d", width="small"),
+                "Risk Score": st.column_config.ProgressColumn("Risk", help="Volatility danger meter (0-100)", min_value=0, max_value=100, format="%d", width="small"),
+                "Final Score": st.column_config.NumberColumn("Score", help="Combined trend and risk score", format="%d", width="small"),
+                "Investment (€)": st.column_config.NumberColumn("Invest (€)", help="Calculated position size", format="%.2f", width="small")
+            },
+            width='stretch',
             hide_index=True
         )
 
