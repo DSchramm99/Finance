@@ -1,0 +1,3 @@
+## 2025-05-03 - Parallelization and Metadata Optimization
+**Learning:** Sequential processing of financial data in Streamlit apps causes significant UI lag. `yf.Ticker(ticker).info` is an extremely heavy call compared to the Yahoo Finance Search API for basic metadata like company names. Using `ThreadPoolExecutor` requires careful propagation of Streamlit's script context via `add_script_run_ctx` to keep `@st.cache_data` working correctly in child threads.
+**Action:** Always prefer the Search API for lightweight metadata lookups. Use `ThreadPoolExecutor` with `as_completed` and `add_script_run_ctx` for I/O-bound loops to maintain UI responsiveness and caching consistency.
