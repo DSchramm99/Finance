@@ -185,7 +185,7 @@ if page == "Signals":
 
         # Highlight BUY signals
         def style_signals(row):
-            if row.Signal == "BUY":
+            if row['Signal'] == "BUY":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
@@ -216,16 +216,26 @@ if page == "Signals":
             "final_score": "Final Score"
         })
 
+        # Invert risk score for "Danger Meter" visualization (100 - score)
+        # Higher score = More volatility/risk
+        display_df["Risk Score"] = 100 - display_df["Risk Score"]
+
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
-            use_container_width=True,
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Company": st.column_config.TextColumn("Company", help="Name of the company"),
+                "Signal": st.column_config.TextColumn("Signal", help="Trading signal (BUY/HOLD)"),
+                "Leverage": st.column_config.NumberColumn("Leverage", format="%.1fx", help="Recommended leverage factor"),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", format="%.2f", help="Current market price"),
+                "Entry Price": st.column_config.NumberColumn("Entry Price", format="%.2f", help="Calculated entry price"),
+                "Stop Level": st.column_config.NumberColumn("Stop Level", format="%.2f", help="Initial stop loss level"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", format="%.2f", help="Calculated take profit target"),
+                "Trend Score": st.column_config.ProgressColumn("Trend Score", min_value=0, max_value=100, format="%d", help="Strength of the uptrend (0-100)"),
+                "Risk Score": st.column_config.ProgressColumn("Risk Score", min_value=0, max_value=100, format="%d", help="Volatility-based risk (Fuller bar = higher risk)"),
+                "Final Score": st.column_config.NumberColumn("Final Score", format="%d", help="Combined score for ranking"),
+                "Investment (€)": st.column_config.NumberColumn("Investment (€)", format="%.2f", help="Recommended position size in Euro")
+            },
+            width="stretch",
             hide_index=True
         )
 
@@ -414,16 +424,20 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
                 column_order=display_cols,
-                use_container_width=True,
+                column_config={
+                    "Company": st.column_config.TextColumn("Company", help="Name of the company"),
+                    "Ticker": st.column_config.TextColumn("Ticker", help="Stock ticker symbol"),
+                    "Price": st.column_config.NumberColumn("Price", format="%.2f", help="Current price"),
+                    "Entry": st.column_config.NumberColumn("Entry", format="%.2f", help="Your entry price"),
+                    "Profit (%)": st.column_config.NumberColumn("Profit (%)", format="%.2f%%", help="Current profit/loss including leverage"),
+                    "Stop": st.column_config.NumberColumn("Stop", format="%.2f", help="Trailing chandelier stop level"),
+                    "Take Profit": st.column_config.NumberColumn("Take Profit", format="%.2f", help="Target take profit level"),
+                    "Leverage": st.column_config.NumberColumn("Leverage", format="%.1fx", help="Leverage used for this trade"),
+                    "Action": st.column_config.TextColumn("Action", help="Recommended action (HOLD/SELL/LIQUIDATION)")
+                },
+                width="stretch",
                 hide_index=True
             )
 
@@ -435,13 +449,16 @@ if page in ["Test", "Live"]:
 
     if df_trades.empty:
         st.info("Keine Trades vorhanden.")
+        if st.button("🚀 Go to Signals", use_container_width=True):
+            st.session_state["page"] = "Signals"
+            st.rerun()
     else:
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
             df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            width="stretch"
         )
 
         st.subheader("🛠 Aktionen")
