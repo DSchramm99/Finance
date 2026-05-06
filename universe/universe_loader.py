@@ -13,10 +13,10 @@ def load_wikipedia_table(url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
 
-    tables = pd.read_html(response.text)
+    tables = pd.read_html(StringIO(response.text))
 
     return tables
 

@@ -7,6 +7,8 @@ from datetime import datetime
 # Database Selector
 # =====================================================
 
+# SECURITY NOTE: Database files (*.db) contain sensitive trade information
+# and must be excluded from version control via .gitignore.
 DB_PATHS = {
     "TEST": "trading_test.db",
     "LIVE": "trading_live.db"
