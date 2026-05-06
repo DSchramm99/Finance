@@ -189,6 +189,7 @@ if page == "Signals":
                 return ['background-color: #d4edda; color: #155724'] * len(row)
             return [''] * len(row)
 
+        results["Risk (Danger)"] = 100 - results["risk_score"]
         display_cols = [
             "company_name",
             "signal",
@@ -198,7 +199,7 @@ if page == "Signals":
             "stop_level",
             "take_profit",
             "trend_score",
-            "risk_score",
+            "Risk (Danger)",
             "final_score",
             "Investment (€)"
         ]
@@ -212,20 +213,32 @@ if page == "Signals":
             "stop_level": "Stop Level",
             "take_profit": "Take Profit",
             "trend_score": "Trend Score",
-            "risk_score": "Risk Score",
             "final_score": "Final Score"
         })
 
         st.dataframe(
-            display_df.style.apply(style_signals, axis=1).format({
-                "Latest Price": "{:.2f}",
-                "Entry Price": "{:.2f}",
-                "Stop Level": "{:.2f}",
-                "Take Profit": "{:.2f}",
-                "Investment (€)": "{:.2f}",
-                "Leverage": "{:.1f}x"
-            }),
-            use_container_width=True,
+            display_df.style.apply(style_signals, axis=1),
+            column_config={
+                "Latest Price": st.column_config.NumberColumn(format="%.2f"),
+                "Entry Price": st.column_config.NumberColumn(format="%.2f"),
+                "Stop Level": st.column_config.NumberColumn(format="%.2f"),
+                "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                "Investment (€)": st.column_config.NumberColumn(format="%.2f"),
+                "Leverage": st.column_config.NumberColumn(format="%.1f x"),
+                "Trend Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d", help="Trend strength: 0=down, 100=up",
+                    color="auto"
+                ),
+                "Risk (Danger)": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d", help="Volatility danger: 0=stable, 100=volatile",
+                    color="auto-inverse"
+                ),
+                "Final Score": st.column_config.ProgressColumn(
+                    min_value=0, max_value=100, format="%d", help="Combined score for ranking",
+                    color="auto"
+                ),
+            },
+            width="stretch",
             hide_index=True
         )
 
@@ -414,16 +427,17 @@ if page in ["Test", "Live"]:
             def style_mon(row): return [row["_color"]] * len(row)
 
             st.dataframe(
-                mon_df.style.apply(style_mon, axis=1).format({
-                    "Price": "{:.2f}",
-                    "Entry": "{:.2f}",
-                    "Profit (%)": "{:.2f}%",
-                    "Stop": "{:.2f}",
-                    "Take Profit": "{:.2f}",
-                    "Leverage": "{:.1f}x"
-                }),
+                mon_df.style.apply(style_mon, axis=1),
+                column_config={
+                    "Price": st.column_config.NumberColumn(format="%.2f"),
+                    "Entry": st.column_config.NumberColumn(format="%.2f"),
+                    "Profit (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                    "Stop": st.column_config.NumberColumn(format="%.2f"),
+                    "Take Profit": st.column_config.NumberColumn(format="%.2f"),
+                    "Leverage": st.column_config.NumberColumn(format="%.1f x"),
+                },
                 column_order=display_cols,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -441,7 +455,7 @@ if page in ["Test", "Live"]:
 
         st.dataframe(
             df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            width="stretch"
         )
 
         st.subheader("🛠 Aktionen")
