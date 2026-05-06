@@ -3,3 +3,7 @@ yfinance
 pandas
 plotly
 numpy
+sqlalchemy
+psycopg2-binary
+lxml
+requests
