@@ -7,3 +7,5 @@ sqlalchemy
 psycopg2-binary
 lxml
 requests
+beautifulsoup4
+html5lib
