@@ -3,69 +3,95 @@
 ## Overview
 
 This project is a **quantitative stock screening tool** built with **Python and Streamlit**.
-It scans major stock indices (e.g. S&P 500, Nasdaq 100, DAX) and identifies the **top 5 trading opportunities**.
+It scans major stock indices (e.g. S&P 500, Nasdaq 100, DAX) and identifies the **top 5 trading opportunities** based on a rule-based scoring model.
+
+The system evaluates each stock using a combination of:
+* Trend analysis
+* Volatility / risk assessment
+* Risk-reward calculation
+
+The result is a ranked list of potential trades including:
+* Entry price
+* Stop-loss level
+* Take-profit target
+* Trend score
+* Risk score
+* Combined final score
+
+The application also provides an interactive **price chart with moving averages and trade levels**.
 
 ---
 
-## 🚀 How to Access the App
+## 📈 Data Source
 
-You have two ways to run and access this app: **locally on your network** or **permanently in the cloud**.
-
-### 1. Local Network Access (e.g., from your Phone)
-If you run the app on your Mac/PC, you can access it from your phone as long as both are on the **same Wi-Fi**.
-
-1.  **Start the app on your computer:**
-    ```bash
-    streamlit run app.py
-    ```
-2.  **Find your Local IP:** Streamlit will show you two URLs in the terminal:
-    - `Local URL: http://localhost:8501` (for your computer)
-    - `Network URL: http://192.168.x.x:8501` (**use this on your phone!**)
-3.  **Keep it running:** For this to work, your computer **must stay on and the app must keep running**. If you close your Mac, the app stops.
-
-### 2. Permanent Cloud Deployment (Recommended)
-To access the app from **anywhere in the world** at **any time** (without leaving your computer on), you should deploy it to a cloud provider.
-
-#### Streamlit Community Cloud (Free & Easiest)
-1. Push this code to a **GitHub repository**.
-2. Go to [share.streamlit.io](https://share.streamlit.io/) and connect your GitHub.
-3. Select this repository and click **Deploy**.
-4. You will get a permanent link (e.g., `https://your-app.streamlit.app`) that works on any device.
+Market data is retrieved from **Yahoo Finance** via the `yfinance` package.
+Each ticker loads **2 years of daily price data** including Open, High, Low, Close, and Adjusted prices.
 
 ---
 
-## 💾 Saving your Trades (Persistence)
+## 📊 Technical Indicators
 
-By default, the app saves trades in a local file (`trading_live.db`).
-- **If you use local access:** The trades are saved on your computer.
-- **If you use the cloud:** You should connect a **centralized database** so your trades aren't lost when the cloud server restarts.
+The following indicators are calculated for every stock:
 
-### Connecting a Centralized Database
-Set the `DATABASE_URL` environment variable in your cloud provider settings (e.g., a PostgreSQL URL from Supabase or Neon):
-```bash
-export DATABASE_URL="postgresql://user:password@host:port/dbname"
-```
-The app will automatically detect this and use the remote database for both your computer and your phone.
+### Simple Moving Averages
+| Indicator | Description |
+| --------- | ----------- |
+| SMA20     | 20-day simple moving average |
+| SMA50     | 50-day simple moving average |
+| SMA200    | 200-day simple moving average |
+
+These indicators are used to evaluate **short, medium and long-term trend direction**.
+
+### Average True Range (ATR)
+ATR is used as a **volatility proxy**.
+`ATR = Rolling Mean of (High - Low)` over a 14-day window.
+ATR is used to determine **stop loss distance** and risk scoring.
 
 ---
 
-## 🛠 Setup & Technical Details
+## 🧠 Scoring System
 
-### Local Installation
+Each stock receives three scores:
+
+### 1. Trend Score
+Measures how strongly the current price is positioned relative to the SMA20.
+`TrendScore = clamp(50 + ((Close - SMA20) / SMA20) * 200, 0, 100)`
+
+### 2. Risk Score
+Measures **relative volatility** using ATR.
+`RiskScore = clamp(100 - (ATR / Close * 500), 0, 100)`
+*Note: In the UI, higher risk scores indicate higher volatility (inverted for intuition).*
+
+### 3. Final Score
+Combines trend and risk.
+`FinalScore = 0.6 * TrendScore + 0.4 * RiskScore`
+
+---
+
+## 💰 Trade Management
+
+- **Signals:** Get automated buy recommendations for major indices.
+- **Portfolio:** Track open and closed trades with real-time monitoring.
+- **Monitoring:** Uses Chandelier Exit for trailing stops to protect profits.
+
+---
+
+## 🚀 Deployment & Portability
+
+The app is designed to be portable and can be deployed anywhere.
+
+### Local Setup
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### Docker Support
-```bash
-docker build -t trading-system .
-docker run -p 8501:8501 trading-system
-```
+### Cloud Database (Supabase)
+The app is configured to use **Supabase** for persistent storage. Ensure you add `SUPABASE_URL` and `SUPABASE_KEY` to your Streamlit secrets or environment variables to sync trades across devices.
 
 ---
 
-## 📈 Tech Stack
-- **Frontend:** Streamlit
-- **Data:** yfinance, Pandas
-- **Database:** SQLite (local) or any SQL DB via `DATABASE_URL`.
+## 🛠 Tech Stack
+- **Frontend:** [Streamlit](https://streamlit.io/)
+- **Data:** [yfinance](https://github.com/ranaroussi/yfinance)
+- **Database:** Supabase (Remote) or SQLite (Local fallback)
