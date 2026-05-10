@@ -53,9 +53,9 @@ def init_db(mode, start_capital=2000):
         # Supabase tables should be created via SQL Editor in dashboard
         # But we check if portfolio exists
         try:
-            res = supabase.table("portfolio").select("*").eq("mode", mode).execute()
+            res = supabase.table("portfolio").select("*").eq("trade_mode", mode).execute()
             if not res.data:
-                supabase.table("portfolio").insert({"capital": start_capital, "mode": mode}).execute()
+                supabase.table("portfolio").insert({"capital": start_capital, "trade_mode": mode}).execute()
         except Exception as e:
             st.warning(f"Supabase Init: {e}. Please ensure 'portfolio' and 'trades' tables are created in Supabase.")
         return
@@ -67,7 +67,7 @@ def init_db(mode, start_capital=2000):
             CREATE TABLE IF NOT EXISTS portfolio (
                 id SERIAL PRIMARY KEY,
                 capital DOUBLE PRECISION,
-                mode TEXT UNIQUE
+                trade_mode TEXT UNIQUE
             )
             """,
             """
@@ -84,16 +84,16 @@ def init_db(mode, start_capital=2000):
                 status TEXT,
                 timestamp TEXT,
                 leverage DOUBLE PRECISION,
-                mode TEXT
+                trade_mode TEXT
             )
             """
         ]
         for q in queries:
             conn.execute(text(q))
 
-        res = conn.execute(text("SELECT * FROM portfolio WHERE mode=:mode"), {"mode": mode}).fetchone()
+        res = conn.execute(text("SELECT * FROM portfolio WHERE trade_mode=:mode"), {"mode": mode}).fetchone()
         if res is None:
-            conn.execute(text("INSERT INTO portfolio (capital, mode) VALUES (:cap, :mode)"), {"cap": start_capital, "mode": mode})
+            conn.execute(text("INSERT INTO portfolio (capital, trade_mode) VALUES (:cap, :mode)"), {"cap": start_capital, "mode": mode})
 
         conn.commit()
         conn.close()
@@ -126,12 +126,12 @@ def init_db(mode, start_capital=2000):
 def get_capital(mode="TEST"):
     supabase = get_supabase()
     if supabase:
-        res = supabase.table("portfolio").select("capital").eq("mode", mode).execute()
+        res = supabase.table("portfolio").select("capital").eq("trade_mode", mode).execute()
         return res.data[0]["capital"] if res.data else None
 
     conn = get_connection(mode)
     if DATABASE_URL:
-        row = conn.execute(text("SELECT capital FROM portfolio WHERE mode=:mode"), {"mode": mode}).fetchone()
+        row = conn.execute(text("SELECT capital FROM portfolio WHERE trade_mode=:mode"), {"mode": mode}).fetchone()
         capital = row[0] if row else None
     else:
         cursor = conn.cursor()
@@ -145,12 +145,12 @@ def get_capital(mode="TEST"):
 def set_capital(amount, mode="TEST"):
     supabase = get_supabase()
     if supabase:
-        supabase.table("portfolio").update({"capital": amount}).eq("mode", mode).execute()
+        supabase.table("portfolio").update({"capital": amount}).eq("trade_mode", mode).execute()
         return
 
     conn = get_connection(mode)
     if DATABASE_URL:
-        conn.execute(text("UPDATE portfolio SET capital=:amount WHERE mode=:mode"), {"amount": amount, "mode": mode})
+        conn.execute(text("UPDATE portfolio SET capital=:amount WHERE trade_mode=:mode"), {"amount": amount, "mode": mode})
         conn.commit()
     else:
         cursor = conn.cursor()
@@ -170,7 +170,7 @@ def add_trade(mode, ticker, entry, stop, tp, position_value, fees, leverage=1.0)
         supabase.table("trades").insert({
             "ticker": ticker, "entry": entry, "stop": stop, "take_profit": tp,
             "position_value": position_value, "fees": fees, "status": "OPEN",
-            "timestamp": timestamp, "leverage": leverage, "mode": mode
+            "timestamp": timestamp, "leverage": leverage, "trade_mode": mode
         }).execute()
         return
 
@@ -178,7 +178,7 @@ def add_trade(mode, ticker, entry, stop, tp, position_value, fees, leverage=1.0)
     if DATABASE_URL:
         conn.execute(text("""
             INSERT INTO trades
-            (ticker, entry, stop, take_profit, position_value, fees, status, timestamp, leverage, mode)
+            (ticker, entry, stop, take_profit, position_value, fees, status, timestamp, leverage, trade_mode)
             VALUES (:ticker, :entry, :stop, :tp, :pos, :fees, 'OPEN', :ts, :lev, :mode)
         """), {
             "ticker": ticker, "entry": entry, "stop": stop, "tp": tp,
@@ -204,9 +204,9 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
         entry, position_value, fees, leverage = trade["entry"], trade["position_value"], trade["fees"], trade.get("leverage", 1.0) or 1.0
         profit = ((exit_price - entry) * (position_value / entry) * leverage) - sell_fee - fees
         supabase.table("trades").update({"exit_price": exit_price, "profit": profit, "status": "CLOSED"}).eq("id", trade_id).execute()
-        cap_res = supabase.table("portfolio").select("capital").eq("mode", mode).execute()
+        cap_res = supabase.table("portfolio").select("capital").eq("trade_mode", mode).execute()
         if cap_res.data:
-            supabase.table("portfolio").update({"capital": cap_res.data[0]["capital"] + profit}).eq("mode", mode).execute()
+            supabase.table("portfolio").update({"capital": cap_res.data[0]["capital"] + profit}).eq("trade_mode", mode).execute()
         return
 
     conn = get_connection(mode)
@@ -218,8 +218,8 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
         t = trade._mapping
         profit = ((exit_price - t["entry"]) * (t["position_value"] / t["entry"]) * (t["leverage"] or 1.0)) - sell_fee - t["fees"]
         conn.execute(text("UPDATE trades SET exit_price=:exit, profit=:profit, status='CLOSED' WHERE id=:id"), {"exit": exit_price, "profit": profit, "id": trade_id})
-        row = conn.execute(text("SELECT capital FROM portfolio WHERE mode=:mode"), {"mode": mode}).fetchone()
-        if row: conn.execute(text("UPDATE portfolio SET capital = :cap WHERE mode=:mode"), {"cap": row[0] + profit, "mode": mode})
+        row = conn.execute(text("SELECT capital FROM portfolio WHERE trade_mode=:mode"), {"mode": mode}).fetchone()
+        if row: conn.execute(text("UPDATE portfolio SET capital = :cap WHERE trade_mode=:mode"), {"cap": row[0] + profit, "mode": mode})
         conn.commit()
     else:
         cursor = conn.cursor()
@@ -239,12 +239,12 @@ def close_trade(mode, trade_id, exit_price, sell_fee = 0):
 def get_open_trades(mode):
     supabase = get_supabase()
     if supabase:
-        res = supabase.table("trades").select("*").eq("status", "OPEN").eq("mode", mode).execute()
+        res = supabase.table("trades").select("*").eq("status", "OPEN").eq("trade_mode", mode).execute()
         return pd.DataFrame(res.data)
 
     conn = get_connection(mode)
     if DATABASE_URL:
-        df = pd.read_sql_query(text("SELECT * FROM trades WHERE status='OPEN' AND mode=:mode"), conn, params={"mode": mode})
+        df = pd.read_sql_query(text("SELECT * FROM trades WHERE status='OPEN' AND trade_mode=:mode"), conn, params={"mode": mode})
     else:
         df = pd.read_sql_query("SELECT * FROM trades WHERE status='OPEN'", conn)
     conn.close()
@@ -286,12 +286,12 @@ def update_trade_exit(mode, trade_id, exit_price):
 def get_closed_trades(mode):
     supabase = get_supabase()
     if supabase:
-        res = supabase.table("trades").select("*").eq("status", "CLOSED").eq("mode", mode).execute()
+        res = supabase.table("trades").select("*").eq("status", "CLOSED").eq("trade_mode", mode).execute()
         return pd.DataFrame(res.data)
 
     conn = get_connection(mode)
     if DATABASE_URL:
-        df = pd.read_sql_query(text("SELECT * FROM trades WHERE status='CLOSED' AND mode=:mode"), conn, params={"mode": mode})
+        df = pd.read_sql_query(text("SELECT * FROM trades WHERE status='CLOSED' AND trade_mode=:mode"), conn, params={"mode": mode})
     else:
         df = pd.read_sql("SELECT * FROM trades WHERE status='CLOSED'", conn)
     conn.close()
@@ -300,14 +300,14 @@ def get_closed_trades(mode):
 def reset_database(mode, start_capital):
     supabase = get_supabase()
     if supabase:
-        supabase.table("trades").delete().eq("mode", mode).execute()
-        supabase.table("portfolio").update({"capital": start_capital}).eq("mode", mode).execute()
+        supabase.table("trades").delete().eq("trade_mode", mode).execute()
+        supabase.table("portfolio").update({"capital": start_capital}).eq("trade_mode", mode).execute()
         return
 
     conn = get_connection(mode)
     if DATABASE_URL:
-        conn.execute(text("DELETE FROM trades WHERE mode=:mode"), {"mode": mode})
-        conn.execute(text("UPDATE portfolio SET capital = :cap WHERE mode = :mode"), {"cap": start_capital, "mode": mode})
+        conn.execute(text("DELETE FROM trades WHERE trade_mode=:mode"), {"mode": mode})
+        conn.execute(text("UPDATE portfolio SET capital = :cap WHERE trade_mode = :mode"), {"cap": start_capital, "mode": mode})
         conn.commit()
     else:
         cursor = conn.cursor()
