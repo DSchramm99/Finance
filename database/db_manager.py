@@ -13,8 +13,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 _ENGINE = None
 
 # Support for Supabase API (via SUPABASE_URL and SUPABASE_KEY)
-SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+try:
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+except Exception:
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 _SUPABASE_CLIENT = None
 

@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
+import requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -24,6 +25,22 @@ from database.db_manager import (
 # ============================
 
 from strategy.position_manager import calculate_position_value
+
+@st.cache_data(ttl=86400)
+def get_company_name_safe(ticker):
+    """
+    Fetches the company name using Yahoo Finance Search API.
+    Faster than using yf.Ticker(ticker).info
+    """
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker}"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        data = res.json()
+        if "quotes" in data and len(data["quotes"]) > 0:
+            return data["quotes"][0].get("longname") or data["quotes"][0].get("shortname") or ticker
+    except Exception:
+        pass
+    return ticker
 from strategy.signal_engine import generate_signal, add_indicators
 
 init_db("TEST", 2000)
@@ -135,7 +152,13 @@ if page == "Signals":
     # Generate Signals
     # =====================================================
 
-    if st.sidebar.button("🚀 Generate Top 5 Signals"):
+    generate_clicked = st.sidebar.button("🚀 Generate Top 5 Signals", use_container_width=True)
+    refresh_clicked = st.sidebar.button("🔄 Refresh Signals", use_container_width=True)
+
+    if refresh_clicked:
+        st.cache_data.clear()
+
+    if generate_clicked or refresh_clicked:
         tickers = get_index_universe(index_choice)
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -152,6 +175,9 @@ if page == "Signals":
         if results:
             df = pd.DataFrame(results)
             df = df.sort_values("final_score", ascending=False).head(5)
+
+            # Add company names
+            df["company_name"] = df["ticker"].apply(get_company_name_safe)
 
             # Investment calculation
             df["Investment (€)"] = df.apply(
@@ -172,14 +198,6 @@ if page == "Signals":
 
     if "results" in st.session_state:
         results = st.session_state["results"]
-
-        company_names = {}
-        for ticker in results["ticker"]:
-            try:
-                company_names[ticker] = yf.Ticker(ticker).info.get("longName", ticker)
-            except:
-                company_names[ticker] = ticker
-        results["company_name"] = results["ticker"].map(company_names)
 
         st.subheader(f"🏆 Top 5 Aktien ({leverage_mode})")
 
@@ -225,7 +243,7 @@ if page == "Signals":
                 "Investment (€)": "{:.2f}",
                 "Leverage": "{:.1f}x"
             }),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
 
@@ -345,12 +363,7 @@ if page in ["Test", "Live"]:
         for _, trade in open_trades_df.iterrows():
             ticker = trade["ticker"]
             try:
-                @st.cache_data(ttl=86400)
-                def get_company_name(t):
-                    try: return yf.Ticker(t).info.get("longName", t)
-                    except: return t
-
-                comp_name = get_company_name(ticker)
+                comp_name = get_company_name_safe(ticker)
 
                 start_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
                 if trade["timestamp"]:
@@ -423,7 +436,7 @@ if page in ["Test", "Live"]:
                     "Leverage": "{:.1f}x"
                 }),
                 column_order=display_cols,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -436,12 +449,21 @@ if page in ["Test", "Live"]:
     if df_trades.empty:
         st.info("Keine Trades vorhanden.")
     else:
+        # Add company names to trades dataframe
+        if "ticker" in df_trades.columns:
+            df_trades["Company"] = df_trades["ticker"].apply(get_company_name_safe)
+            # Reorder columns to put Company near Ticker
+            cols = list(df_trades.columns)
+            if "Company" in cols:
+                cols.insert(cols.index("ticker") + 1, cols.pop(cols.index("Company")))
+                df_trades = df_trades[cols]
+
         num_cols = df_trades.select_dtypes(include=[np.number]).columns.tolist()
         if "id" in num_cols: num_cols.remove("id")
 
         st.dataframe(
             df_trades.style.format({col: "{:.2f}" for col in num_cols}),
-            use_container_width=True
+            width="stretch"
         )
 
         st.subheader("🛠 Aktionen")
